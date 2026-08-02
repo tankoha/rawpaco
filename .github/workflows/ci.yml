@@ -36,13 +36,14 @@ jobs:
       # コンポーネント指定がこの追加インストーラのコンポーネントIDと一致せず
       # 実際にはppcx64.exeが配置されない（2回目のCI失敗で確認済み）。
       # 64bit側を追いかけるのではなく、確実に存在する32bit版(ppc386.exe)に
-      # gcc側を合わせる。ChocolateyForceX86=trueでmingwパッケージにも
-      # 32bit(i686)ビルドをダウンロードさせる（Chocolatey標準の挙動）。
+      # gcc側を合わせる。--x86 で mingw パッケージにも32bit(i686)ビルドを
+      # ダウンロードさせる（choco installのコマンドラインオプション。
+      # 環境変数 $env:ChocolateyForceX86 は試したが効かず、x86_64ビルドが
+      # 変わらずダウンロードされたため--x86フラグに切り替えた）。
       - name: Install FPC and MinGW (gcc)
         shell: pwsh
         run: |
-          $env:ChocolateyForceX86 = 'true'
-          choco install -y freepascal mingw
+          choco install -y freepascal mingw --x86
 
           $fpcExe = Get-ChildItem -Path 'C:\tools\freepascal' -Filter fpc.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $fpcExe) { throw "fpc.exe not found under C:\tools\freepascal after chocolatey install" }

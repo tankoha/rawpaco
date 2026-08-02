@@ -31,7 +31,8 @@
 - Windows CI初回実行（2026-08-02, run 30759838476）: `build-linux` は成功。`build-windows` は `fpc: command not found` で失敗。原因はchocoインストールによるマシンPATH（レジストリ）更新が、GitHub Actionsの同一ジョブ内後続ステップ（別プロセスとして起動）に反映されないため。gccが動いていたのは、mingwインストールが効いたのではなく、Windowsランナーに元々含まれる別経路のgcc（Strawberry Perl等）がPATHにあったためと推測。対策として、chocoインストール直後に `fpc.exe` / `gcc.exe` の実際の設置場所を検索し `$GITHUB_PATH` に明示追記した。
 - Windows CI 2回目実行（run 30760907748）: `fpc` は見つかるようになったが今度は `Illegal COFF Magic`（32bit/64bitのオブジェクト形式不一致）と `Import library not found for c` で失敗。`{$linklib c}` はLinux固有の対処（ld64.so.1問題の回避）であり、Windowsには対応する`c`という名のインポートライブラリが存在せずエラーになるため `{$IFDEF LINUX}` で囲みLinux限定にした（`TSBindings.pas`。これは3回目実行でも解消を確認）。
 - Windows CI 3回目実行（run 30761222949）: `Illegal COFF Magic` 対策として `-Px86_64 -Twin64` を試したが `ppcx64.exe can't be executed`（error code 2 = ファイルが存在しない）で失敗。chocoの `freepascal` パッケージのインストールスクリプト(`ChocolateyInstall.ps1`)を直接取得して確認したところ、64bit OS向けに `fpc-3.2.2.win32.and.win64.exe`（win64コンポーネント追加インストーラ）を実行してはいるが、共有の `setup.inf`（`Components=base,binutils,docs,ide,utils,make,demo,gdb,units,examples`）はこのインストーラのコンポーネントID体系と一致しておらず、実際には `ppcx64.exe` が配置されないと判明。
-- 対策（未検証・要フォローアップ）: 64bit側を追いかけるのをやめ、確実に存在する32bit版(`ppc386.exe`)にgcc側を合わせる方針に変更。`choco install` 前に `$env:ChocolateyForceX86 = 'true'` を設定し、mingwパッケージにも32bit(i686)ビルドをダウンロードさせる（Chocolatey `Install-ChocolateyZipPackage` の標準機能。mingwパッケージの `chocolateyinstall.ps1` を直接確認して裏取り済み）。fpc呼び出しは元のプレーンな `fpc src/rawpaco.lpr` に戻した。gcc.exe検索ロジックは元々パスをハードコードせず動的検索のため変更不要。
+- 対策1（64bit側を諦め32bitに統一する方針）: `ppc386.exe`にgcc側を合わせる。`choco install` 前に `$env:ChocolateyForceX86 = 'true'` を設定して試みたが、Windows CI 4回目実行（run 30761437586）で確認したところ効果がなく、mingwパッケージは相変わらずx86_64ビルドをダウンロードしていた（ログで確認）ため、依然`Illegal COFF Magic`で失敗。
+- 対策2: Chocolatey公式ドキュメントを確認したところ、32bit強制の正しい方法は環境変数ではなく `choco install ... --x86` というコマンドラインオプションだった。`--x86`に切り替えて修正（未検証・要フォローアップ）。fpc呼び出しは元のプレーンな `fpc src/rawpaco.lpr` のまま。gcc.exe検索ロジックは元々パスをハードコードせず動的検索のため変更不要。
 
 ## 直近セッションのメモ
 
