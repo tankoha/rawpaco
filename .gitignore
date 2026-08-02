@@ -13,3 +13,6 @@ backup/
 *.exe
 *.dbg
 *.dSYM/
+
+# Linux実行形式（拡張子なし。ソースの.lprと同名で生成される）
+/src/rawpaco
