@@ -74,10 +74,6 @@ jobs:
           gcc -c vendor/tree-sitter/src/lib.c -I vendor/tree-sitter/include -I vendor/tree-sitter/src -o build/tree-sitter.o
           gcc -c vendor/tree-sitter-pascal/src/parser.c -I vendor/tree-sitter-pascal/src -I vendor/tree-sitter/include -o build/tree-sitter-pascal.o
 
-      # libmingw32/libmingwex/libgccは互いに依存し合う循環参照があり、
-      # 素朴に-lで並べるだけではGNU ldの1回の左→右走査で解決しきれず
-      # atexit等の一部シンボルだけUndefined symbolとして残った（8回目CI
-      # 失敗で確認済み）。--start-group/--end-groupで囲み複数回解決させる。
       - name: Build rawpaco
         shell: bash
         run: |
@@ -86,9 +82,7 @@ jobs:
           for d in "${DIRS[@]}"; do
             FL_ARGS+=("-Fl$d")
           done
-          fpc "${FL_ARGS[@]}" \
-            -k"--start-group" -k"-lmingwex" -k"-lmingw32" -k"-lgcc" -k"-lucrt" -k"-lkernel32" -k"--end-group" \
-            src/rawpaco.lpr
+          fpc "${FL_ARGS[@]}" src/rawpaco.lpr
 
       - name: Run bootstrap self-check
         shell: bash
