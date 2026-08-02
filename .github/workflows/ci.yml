@@ -34,34 +34,22 @@ jobs:
       # chocoの freepascal パッケージは64bit OS向けにwin64クロスコンパイラ
       # (ppcx64.exe)も追加インストールしようとするが、共有のsetup.infの
       # コンポーネント指定がこの追加インストーラのコンポーネントIDと一致せず
-      # 実際にはppcx64.exeが配置されない（2回目のCI失敗で確認済み）。
-      # 32bitに寄せる方式も試したが（--x86でmingwの32bitビルドを取得）、
-      # 単機能のwin64クロスコンパイラ追加インストーラ
-      # (fpc-3.2.2.i386-win32.cross.x86_64-win64.exe)が別途配布されている
-      # ため、これを直接取得しサイレントインストールする方が確実。共有INF
-      # によるコンポーネントID不一致問題を回避でき、mingw側もネイティブの
-      # x86_64ビルドをそのまま使える。
+      # 実際にはppcx64.exeが配置されない。単機能のwin64クロスコンパイラ
+      # 追加インストーラ(fpc-3.2.2.i386-win32.cross.x86_64-win64.exe)を
+      # 直接取得しサイレントインストールする方式も試したが、Windows実機が
+      # なくサイレントインストール引数の検証ができず、インストール後も
+      # ppcx64.exeが見つからなかった（詳細はHANDOFF.md参照）。64bit側を
+      # 追いかけるのを諦め、確実に存在する32bit版(ppc386.exe)にgcc側を
+      # 合わせる。--x86 で mingw パッケージにも32bit(i686)ビルドを
+      # ダウンロードさせる。
       - name: Install FPC and MinGW (gcc)
         shell: pwsh
         run: |
-          choco install -y freepascal mingw
-
-          # Invoke-WebRequestはSourceForgeのミラー選択リダイレクトを正しく
-          # 辿れず、実行可能ファイルではなくHTMLページ等を保存してしまい
-          # 「corrupted and unreadable」でStart-Processが失敗した（6回目CI
-          # 失敗で確認済み）。curl.exe（Windowsランナーに標準搭載）に切替え。
-          $crossInstallerUrl = 'https://sourceforge.net/projects/freepascal/files/Win32/3.2.2/fpc-3.2.2.i386-win32.cross.x86_64-win64.exe/download'
-          $crossInstallerPath = Join-Path $env:TEMP 'fpc-cross-win64.exe'
-          curl.exe -L -o $crossInstallerPath $crossInstallerUrl
-          if ($LASTEXITCODE -ne 0) { throw "curl failed to download the win64 cross-compiler add-on installer (exit $LASTEXITCODE)" }
-          Start-Process -FilePath $crossInstallerPath -ArgumentList '/VERYSILENT', '/NORESTART', '/SUPPRESSMSGBOXES', '/DIR=C:\tools\freepascal' -Wait -NoNewWindow
+          choco install -y freepascal mingw --x86
 
           $fpcExe = Get-ChildItem -Path 'C:\tools\freepascal' -Filter fpc.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $fpcExe) { throw "fpc.exe not found under C:\tools\freepascal after chocolatey install" }
           Add-Content -Path $env:GITHUB_PATH -Value $fpcExe.DirectoryName
-
-          $ppcx64Exe = Get-ChildItem -Path 'C:\tools\freepascal' -Filter ppcx64.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $ppcx64Exe) { throw "ppcx64.exe not found under C:\tools\freepascal even after installing the win64 cross-compiler add-on" }
 
           $gccExe = Get-ChildItem -Path 'C:\ProgramData\mingw64' -Filter gcc.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $gccExe) { throw "gcc.exe not found under C:\ProgramData\mingw64 after chocolatey install" }
@@ -94,7 +82,7 @@ jobs:
           for d in "${DIRS[@]}"; do
             FL_ARGS+=("-Fl$d")
           done
-          fpc -Px86_64 -Twin64 "${FL_ARGS[@]}" src/rawpaco.lpr
+          fpc "${FL_ARGS[@]}" src/rawpaco.lpr
 
       - name: Run bootstrap self-check
         shell: bash
