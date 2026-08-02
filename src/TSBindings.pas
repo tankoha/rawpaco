@@ -38,8 +38,14 @@ unit TSBindings;
 // COFF読み込み処理中にEAccessViolationでクラッシュした（おそらく極小
 // オブジェクトファイルに対するFPC側のCOFFリーダーのエッジケースバグ）。
 // C側の実装・{$L}embedを避け、下記WindowsAtExitShim関数のようにPascal側で
-// `_crt_atexit`へ転送する薄い関数を書き`public name 'atexit'`でエクスポート
-// することで解決する（implementation部を参照）。
+// `_crt_atexit`へ転送する薄い関数を書きエクスポートすることで解決する
+// （implementation部を参照）。`public name`は明示的な名前をそのまま使う
+// ため、win32ターゲットでcdecl関数に自動付与される先頭アンダースコアの
+// 恩恵を受けない（`external;`のように名前省略時のみ自動付与される）。
+// リンカが探すシンボルは`_atexit`（gcc側のcdecl命名規約由来）なので
+// `public name '_atexit'`と明示的にアンダースコアを含めて指定する。
+// 同様に`_crt_atexit`側は名前省略の`external;`のため自動付与により
+// `__crt_atexit`として解決される（nmで実在を確認済み、libmsvcrt.a等）。
 {$IFDEF MSWINDOWS}
 {$linklib mingwex}
 {$linklib mingw32}
@@ -82,7 +88,7 @@ implementation
 {$IFDEF MSWINDOWS}
 function _crt_atexit(func: Pointer): LongInt; cdecl; external;
 
-function WindowsAtExitShim(func: Pointer): LongInt; cdecl; public name 'atexit';
+function WindowsAtExitShim(func: Pointer): LongInt; cdecl; public name '_atexit';
 begin
   Result := _crt_atexit(func);
 end;
