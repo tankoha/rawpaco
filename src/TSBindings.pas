@@ -20,21 +20,13 @@ unit TSBindings;
 {$IFDEF LINUX}
 {$linklib c}
 {$ENDIF}
-// Windows(mingw)側でも同様の理由でCランタイムのリンクが必要。ただしFPC自身の
-// リンカ(ld.exe)はgccと違いlibgcc/libmingwex/libmingw32/CRT/kernel32を暗黙に
-// 追加しないため、vendorのCソースが使うmalloc/memcpy/QueryPerformanceCounter
-// 等のシンボルが「Undefined symbol」になる。個別に列挙してリンクする
-// （CI(.github/workflows/ci.yml)側でmingwの実際のインストール場所から
-// 各.aファイルの検索パスを動的取得し-Flで渡している）。choco経由でpin
-// しているmingw(niXman mingw-builds 16.1.0)はucrtランタイムを使うため
-// crtは`ucrt`を指定する。
-{$IFDEF MSWINDOWS}
-{$linklib mingwex}
-{$linklib mingw32}
-{$linklib gcc}
-{$linklib ucrt}
-{$linklib kernel32}
-{$ENDIF}
+// Windows(mingw)側でも同様の理由でCランタイムのリンクが必要だが、
+// libmingw32/libmingwex/libgccは互いに依存し合う循環参照があり
+// （典型的なmingw-w64の既知の構造）、{$linklib}を並べる素朴な方式では
+// GNU ldが1回の左→右走査で解決しきれず一部シンボル(atexit等)だけ
+// Undefined symbolとして残る。ld呼び出し側で--start-group/--end-groupで
+// 囲み複数回解決させる必要があるため、CI(.github/workflows/ci.yml)側の
+// fpc呼び出しで`-k`経由の生ld引数として渡している（{$linklib}は使わない）。
 {$L ../build/tree-sitter.o}
 {$L ../build/tree-sitter-pascal.o}
 
