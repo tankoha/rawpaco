@@ -35,23 +35,44 @@ jobs:
       # (ppcx64.exe)も追加インストールしようとするが、共有のsetup.infの
       # コンポーネント指定がこの追加インストーラのコンポーネントIDと一致せず
       # 実際にはppcx64.exeが配置されない（2回目のCI失敗で確認済み）。
-      # 64bit側を追いかけるのではなく、確実に存在する32bit版(ppc386.exe)に
-      # gcc側を合わせる。--x86 で mingw パッケージにも32bit(i686)ビルドを
-      # ダウンロードさせる（choco installのコマンドラインオプション。
-      # 環境変数 $env:ChocolateyForceX86 は試したが効かず、x86_64ビルドが
-      # 変わらずダウンロードされたため--x86フラグに切り替えた）。
+      # 32bitに寄せる方式も試したが（--x86でmingwの32bitビルドを取得）、
+      # 単機能のwin64クロスコンパイラ追加インストーラ
+      # (fpc-3.2.2.i386-win32.cross.x86_64-win64.exe)が別途配布されている
+      # ため、これを直接取得しサイレントインストールする方が確実。共有INF
+      # によるコンポーネントID不一致問題を回避でき、mingw側もネイティブの
+      # x86_64ビルドをそのまま使える。
       - name: Install FPC and MinGW (gcc)
         shell: pwsh
         run: |
-          choco install -y freepascal mingw --x86
+          choco install -y freepascal mingw
+
+          $crossInstallerUrl = 'https://sourceforge.net/projects/freepascal/files/Win32/3.2.2/fpc-3.2.2.i386-win32.cross.x86_64-win64.exe/download'
+          $crossInstallerPath = Join-Path $env:TEMP 'fpc-cross-win64.exe'
+          Invoke-WebRequest -Uri $crossInstallerUrl -OutFile $crossInstallerPath -UseBasicParsing
+          Start-Process -FilePath $crossInstallerPath -ArgumentList '/VERYSILENT', '/NORESTART', '/SUPPRESSMSGBOXES', '/DIR=C:\tools\freepascal' -Wait -NoNewWindow
 
           $fpcExe = Get-ChildItem -Path 'C:\tools\freepascal' -Filter fpc.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $fpcExe) { throw "fpc.exe not found under C:\tools\freepascal after chocolatey install" }
           Add-Content -Path $env:GITHUB_PATH -Value $fpcExe.DirectoryName
 
+          $ppcx64Exe = Get-ChildItem -Path 'C:\tools\freepascal' -Filter ppcx64.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $ppcx64Exe) { throw "ppcx64.exe not found under C:\tools\freepascal even after installing the win64 cross-compiler add-on" }
+
           $gccExe = Get-ChildItem -Path 'C:\ProgramData\mingw64' -Filter gcc.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $gccExe) { throw "gcc.exe not found under C:\ProgramData\mingw64 after chocolatey install" }
           Add-Content -Path $env:GITHUB_PATH -Value $gccExe.DirectoryName
+
+          # FPC自身のリンカ(ld.exe)はgccのように暗黙のデフォルトライブラリ
+          # (libgcc, libmingwex, libmingw32, CRT, kernel32等)を自動追加しない
+          # ため、vendorのCソースが使うシンボル(malloc/memcpy/QueryPerformance
+          # Counter等)がリンクできず「Undefined symbol」になる（4回目CI成功後
+          # の5回目実行で確認済み）。該当する.aファイルの実際の設置場所を
+          # 検索し、-Fl（ライブラリ検索パス）として後続ステップに渡す。
+          $mingwRoot = Split-Path -Parent (Split-Path -Parent $gccExe.DirectoryName)
+          $libDirs = Get-ChildItem -Path $mingwRoot -Include 'libmingwex.a','libmingw32.a','libgcc.a','libkernel32.a','libucrt.a','libmsvcrt.a' -Recurse -ErrorAction SilentlyContinue |
+            ForEach-Object { $_.DirectoryName } | Sort-Object -Unique
+          if (-not $libDirs) { throw "no mingw runtime import libraries (libmingwex.a etc.) found under $mingwRoot" }
+          Add-Content -Path $env:GITHUB_ENV -Value "MINGW_LIB_DIRS=$($libDirs -join ';')"
 
       - name: Build vendor objects
         shell: bash
@@ -62,7 +83,13 @@ jobs:
 
       - name: Build rawpaco
         shell: bash
-        run: fpc src/rawpaco.lpr
+        run: |
+          FL_ARGS=()
+          IFS=';' read -ra DIRS <<< "$MINGW_LIB_DIRS"
+          for d in "${DIRS[@]}"; do
+            FL_ARGS+=("-Fl$d")
+          done
+          fpc -Px86_64 -Twin64 "${FL_ARGS[@]}" src/rawpaco.lpr
 
       - name: Run bootstrap self-check
         shell: bash
