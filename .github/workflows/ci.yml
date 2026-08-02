@@ -78,7 +78,7 @@ jobs:
           mingw_root="$(dirname "$(dirname "$(command -v gcc)")")"
           echo "mingw_root=$mingw_root"
           find "$mingw_root" -name '*.a' | while read -r lib; do
-            hit=$(nm "$lib" 2>/dev/null | grep -i ' atexit$' || true)
+            hit=$(nm "$lib" 2>/dev/null | grep -i 'atexit' || true)
             if [ -n "$hit" ]; then
               echo "=== $lib ==="
               echo "$hit"
