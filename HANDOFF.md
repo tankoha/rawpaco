@@ -1,0 +1,31 @@
+# HANDOFF.md
+
+このファイルはセッション間の引き継ぎ用です。決着した論点は都度削除し、git historyに委ねてください（詳細な運用ルールはCLAUDE.mdを参照）。
+
+## 実装済みルール一覧
+
+| ID | 内容 | 状態 | 備考 |
+|---|---|---|---|
+| (未着手) | | | |
+
+## 見送ったルール（検討済み・意図的に未実装）
+
+- (該当なし)
+
+## tree-sitter-pascal 文法カバレッジの既知の穴
+
+- (未検証。着手後、パース失敗・誤認識した構文とサンプルコードをここに追記)
+
+## 自己lint到達状況
+
+- 本ツール自身のソースへの自己適用: 未実施
+- 鶏卵問題の解消範囲: N/A（初期段階）
+
+## 直近セッションのメモ
+
+- リポジトリinit完了（git init, MIT license, FPC/Object Pascal実装方針, GitHub: tankoha/rawpaco public）。CLAUDE.mdへのルール追記も完了。詳細はgit historyおよびCLAUDE.md参照。
+- 次のステップ: tree-sitter-pascalのバージョン選定・vendoring、tree-sitter本体のCライブラリ入手/ビルド方法の確定、CI設定（lint/ビルド確認）の追加。
+
+## 関連プロジェクト（参考・棚卸し対象外）
+
+- CodeTools方式によるFPC/Lazarus向け静的解析ツールは別リポジトリで構想のみ管理（GPL-3.0-or-later予定、実装未着手）。詳細は当該リポジトリのREADME参照。本HANDOFF.mdでは追跡しない。

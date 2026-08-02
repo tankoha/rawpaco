@@ -1,0 +1,15 @@
+# FPC/Lazarus build artifacts
+*.o
+*.ppu
+*.a
+*.or
+*.res
+*.rst
+*.rsj
+*.compiled
+*.lps
+lib/
+backup/
+*.exe
+*.dbg
+*.dSYM/
