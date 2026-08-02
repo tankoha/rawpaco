@@ -23,7 +23,7 @@
 
 ## 直近セッションのメモ
 
-- リポジトリinit完了（git init, MIT license, FPC/Object Pascal実装方針, GitHub: tankoha/rawpaco public）。CLAUDE.mdへのルール追記も完了。詳細はgit historyおよびCLAUDE.md参照。
+- FPC開発環境をローカルに導入済み（Ubuntu 24.04、apt経由: fpc 3.2.2+dfsg-32, fpc-source, lazarus 3.0）。`fpc src/rawpaco.lpr` でビルド・実行を確認済み。
 - 次のステップ: tree-sitter-pascalのバージョン選定・vendoring、tree-sitter本体のCライブラリ入手/ビルド方法の確定、CI設定（lint/ビルド確認）の追加。
 
 ## 関連プロジェクト（参考・棚卸し対象外）
