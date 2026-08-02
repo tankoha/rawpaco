@@ -30,9 +30,18 @@ jobs:
       # GitHub Actionsは各ステップを新規プロセスとして起動するため、その変更は
       # 同じジョブ内の後続ステップには自動反映されない。$GITHUB_PATHへの明示
       # 追記が必要（実際に初回CI実行で `fpc: command not found` として顕在化した）。
+      #
+      # chocoの freepascal パッケージは64bit OS向けにwin64クロスコンパイラ
+      # (ppcx64.exe)も追加インストールしようとするが、共有のsetup.infの
+      # コンポーネント指定がこの追加インストーラのコンポーネントIDと一致せず
+      # 実際にはppcx64.exeが配置されない（2回目のCI失敗で確認済み）。
+      # 64bit側を追いかけるのではなく、確実に存在する32bit版(ppc386.exe)に
+      # gcc側を合わせる。ChocolateyForceX86=trueでmingwパッケージにも
+      # 32bit(i686)ビルドをダウンロードさせる（Chocolatey標準の挙動）。
       - name: Install FPC and MinGW (gcc)
         shell: pwsh
         run: |
+          $env:ChocolateyForceX86 = 'true'
           choco install -y freepascal mingw
 
           $fpcExe = Get-ChildItem -Path 'C:\tools\freepascal' -Filter fpc.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -50,14 +59,9 @@ jobs:
           gcc -c vendor/tree-sitter/src/lib.c -I vendor/tree-sitter/include -I vendor/tree-sitter/src -o build/tree-sitter.o
           gcc -c vendor/tree-sitter-pascal/src/parser.c -I vendor/tree-sitter-pascal/src -I vendor/tree-sitter/include -o build/tree-sitter-pascal.o
 
-      # chocoの freepascal パッケージは既定では32bit(ppc386.exe)を呼び出すが、
-      # 64bit OS向けにwin64クロスコンパイラ(ppcx64.exe)も同梱でインストール
-      # される。mingwのgccは64bitオブジェクトを生成するため、ターゲットを
-      # 明示的に64bitに揃える(-Px86_64 -Twin64)。揃えないと
-      # 「Illegal COFF Magic」でリンクに失敗する（初回CI実行で確認済み）。
       - name: Build rawpaco
         shell: bash
-        run: fpc -Px86_64 -Twin64 src/rawpaco.lpr
+        run: fpc src/rawpaco.lpr
 
       - name: Run bootstrap self-check
         shell: bash
