@@ -34,8 +34,12 @@ unit TSBindings;
 // mingw-builds 16.1.0, UCRT)はどのインポートライブラリにもプレーンな
 // `atexit`シンボルを公開していないと判明（UCRT環境では<stdlib.h>の
 // インライン展開経由でのみ提供され、実体は`_crt_atexit`。詳細はHANDOFF.md
-// 参照）。src/win32_atexit_shim.c で`_crt_atexit`へ転送する薄いシムを
-// 提供し、build/win32_atexit_shim.o として静的リンクすることで解決する。
+// 参照）。Cのシム(.o)を{$L}で埋め込む方式を試したが、ppc386.exe自体が
+// COFF読み込み処理中にEAccessViolationでクラッシュした（おそらく極小
+// オブジェクトファイルに対するFPC側のCOFFリーダーのエッジケースバグ）。
+// C側の実装・{$L}embedを避け、下記WindowsAtExitShim関数のようにPascal側で
+// `_crt_atexit`へ転送する薄い関数を書き`public name 'atexit'`でエクスポート
+// することで解決する（implementation部を参照）。
 {$IFDEF MSWINDOWS}
 {$linklib mingwex}
 {$linklib mingw32}
@@ -46,7 +50,6 @@ unit TSBindings;
 {$linklib mingwex}
 {$linklib mingw32}
 {$linklib gcc}
-{$L ../build/win32_atexit_shim.o}
 {$ENDIF}
 {$L ../build/tree-sitter.o}
 {$L ../build/tree-sitter-pascal.o}
@@ -75,5 +78,14 @@ function ts_node_string(node: TSNode): PAnsiChar; cdecl; external;
 function tree_sitter_pascal: TSLanguage; cdecl; external name 'tree_sitter_pascal';
 
 implementation
+
+{$IFDEF MSWINDOWS}
+function _crt_atexit(func: Pointer): LongInt; cdecl; external;
+
+function WindowsAtExitShim(func: Pointer): LongInt; cdecl; public name 'atexit';
+begin
+  Result := _crt_atexit(func);
+end;
+{$ENDIF}
 
 end.
