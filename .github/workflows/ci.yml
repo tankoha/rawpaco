@@ -26,8 +26,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # chocoのインストール自体はマシン全体のPATH(レジストリ)を更新するが、
+      # GitHub Actionsは各ステップを新規プロセスとして起動するため、その変更は
+      # 同じジョブ内の後続ステップには自動反映されない。$GITHUB_PATHへの明示
+      # 追記が必要（実際に初回CI実行で `fpc: command not found` として顕在化した）。
       - name: Install FPC and MinGW (gcc)
-        run: choco install -y freepascal mingw
+        shell: pwsh
+        run: |
+          choco install -y freepascal mingw
+
+          $fpcExe = Get-ChildItem -Path 'C:\tools\freepascal' -Filter fpc.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $fpcExe) { throw "fpc.exe not found under C:\tools\freepascal after chocolatey install" }
+          Add-Content -Path $env:GITHUB_PATH -Value $fpcExe.DirectoryName
+
+          $gccExe = Get-ChildItem -Path 'C:\ProgramData\mingw64' -Filter gcc.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $gccExe) { throw "gcc.exe not found under C:\ProgramData\mingw64 after chocolatey install" }
+          Add-Content -Path $env:GITHUB_PATH -Value $gccExe.DirectoryName
 
       - name: Build vendor objects
         shell: bash
