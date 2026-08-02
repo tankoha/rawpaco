@@ -73,17 +73,59 @@ jobs:
           mkdir -p build
           gcc -c vendor/tree-sitter/src/lib.c -I vendor/tree-sitter/include -I vendor/tree-sitter/src -o build/tree-sitter.o
           gcc -c vendor/tree-sitter-pascal/src/parser.c -I vendor/tree-sitter-pascal/src -I vendor/tree-sitter/include -o build/tree-sitter-pascal.o
+          gcc -c src/win32_atexit_shim.c -o build/win32_atexit_shim.o
 
-      - name: Build rawpaco
+      - name: Diagnose atexit references
         shell: bash
         run: |
+          set +e
+          IFS=';' read -ra DIRS <<< "$MINGW_LIB_DIRS"
+          echo "== who REFERENCES atexit =="
+          for d in "${DIRS[@]}"; do
+            for a in "$d"/*.a; do
+              nm -A --undefined-only "$a" 2>/dev/null | grep -E '(^|[ \t])_atexit$'
+            done
+          done
+          echo "== who DEFINES _crt_atexit =="
+          for d in "${DIRS[@]}"; do
+            for a in "$d"/*.a; do
+              nm -A --defined-only "$a" 2>/dev/null | grep -E '__crt_atexit$'
+            done
+          done
+          echo "== ld availability =="
+          which ld || true
+          ld --version | head -2 || true
+          echo "== done =="
+          exit 0
+
+      - name: Build rawpaco (linker experiment matrix)
+        shell: bash
+        run: |
+          set +e
           FL_ARGS=()
           IFS=';' read -ra DIRS <<< "$MINGW_LIB_DIRS"
           for d in "${DIRS[@]}"; do
             FL_ARGS+=("-Fl$d")
           done
-          fpc "${FL_ARGS[@]}" src/rawpaco.lpr
 
-      - name: Run bootstrap self-check
-        shell: bash
-        run: ./src/rawpaco.exe
+          attempt() {
+            local name="$1"; shift
+            rm -f src/rawpaco.exe src/*.o src/*.ppu
+            echo "===== ATTEMPT $name : fpc $* ====="
+            fpc "$@" src/rawpaco.lpr 2>&1 | tail -40
+            if [ -f src/rawpaco.exe ]; then
+              echo "----- ATTEMPT $name RESULT: exe produced"
+            else
+              echo "----- ATTEMPT $name RESULT: no exe"
+            fi
+          }
+
+          attempt A-internal-baseline "${FL_ARGS[@]}"
+          attempt B-external-linker -Xe "${FL_ARGS[@]}"
+          echo "===== link.res after attempt B ====="
+          cat src/link*.res 2>/dev/null | tail -60
+          attempt C-external-plus-shim -Xe -kbuild/win32_atexit_shim.o "${FL_ARGS[@]}"
+          if [ -f src/rawpaco.exe ]; then ./src/rawpaco.exe; echo "selfcheck exit=$?"; fi
+          attempt D-internal-plus-shim -Xi -kbuild/win32_atexit_shim.o "${FL_ARGS[@]}"
+          if [ -f src/rawpaco.exe ]; then ./src/rawpaco.exe; echo "selfcheck exit=$?"; fi
+          exit 0
