@@ -46,9 +46,14 @@ jobs:
         run: |
           choco install -y freepascal mingw
 
+          # Invoke-WebRequestはSourceForgeのミラー選択リダイレクトを正しく
+          # 辿れず、実行可能ファイルではなくHTMLページ等を保存してしまい
+          # 「corrupted and unreadable」でStart-Processが失敗した（6回目CI
+          # 失敗で確認済み）。curl.exe（Windowsランナーに標準搭載）に切替え。
           $crossInstallerUrl = 'https://sourceforge.net/projects/freepascal/files/Win32/3.2.2/fpc-3.2.2.i386-win32.cross.x86_64-win64.exe/download'
           $crossInstallerPath = Join-Path $env:TEMP 'fpc-cross-win64.exe'
-          Invoke-WebRequest -Uri $crossInstallerUrl -OutFile $crossInstallerPath -UseBasicParsing
+          curl.exe -L -o $crossInstallerPath $crossInstallerUrl
+          if ($LASTEXITCODE -ne 0) { throw "curl failed to download the win64 cross-compiler add-on installer (exit $LASTEXITCODE)" }
           Start-Process -FilePath $crossInstallerPath -ArgumentList '/VERYSILENT', '/NORESTART', '/SUPPRESSMSGBOXES', '/DIR=C:\tools\freepascal' -Wait -NoNewWindow
 
           $fpcExe = Get-ChildItem -Path 'C:\tools\freepascal' -Filter fpc.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
