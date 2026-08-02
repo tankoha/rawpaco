@@ -29,18 +29,21 @@ unit TSBindings;
 // しているmingw(niXman mingw-builds 16.1.0)はucrtランタイムなので
 // crtは`ucrt`を指定する。
 //
-// mingwex/mingw32/gccは互いに依存し合う循環参照があり（mingw-w64で既知の
-// 構造）、1回ずつ並べるだけではGNU ldの左→右一方向走査で解決しきれず
-// atexitだけがUndefined symbolとして残った。ld呼び出しに-k経由で
-// --start-group/--end-groupを渡す方式も試したが効果がなかったため、
-// 単純にmingwex/mingw32/gccをucrt/kernel32の後にもう一度並べて2周目の
-// 走査で解決させる（--start-groupが登場する以前からある古典的な回避策）。
+// mingwex/mingw32/gcc/ucrt/kernel32を一通り並べてもatexitだけが
+// Undefined symbolとして残った。mingwex/mingw32/gccをucrt/kernel32の後に
+// もう一度並べる2周目の走査（循環参照対策の古典的回避策）も試したが
+// 変化がなく、そもそもこの5つのいずれにもatexitが存在しないと判明。
+// pinしているmingw(niXman mingw-builds 16.1.0)は"posix"スレッディング
+// モデルのビルドであり、posixスレッディング版mingw-w64はatexitの
+// スレッドセーフな登録処理をlibwinpthreadに依存することが多いため、
+// これを追加する。
 {$IFDEF MSWINDOWS}
 {$linklib mingwex}
 {$linklib mingw32}
 {$linklib gcc}
 {$linklib ucrt}
 {$linklib kernel32}
+{$linklib winpthread}
 {$linklib mingwex}
 {$linklib mingw32}
 {$linklib gcc}

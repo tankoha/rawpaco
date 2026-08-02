@@ -62,7 +62,7 @@ jobs:
           # の5回目実行で確認済み）。該当する.aファイルの実際の設置場所を
           # 検索し、-Fl（ライブラリ検索パス）として後続ステップに渡す。
           $mingwRoot = Split-Path -Parent (Split-Path -Parent $gccExe.DirectoryName)
-          $libDirs = Get-ChildItem -Path $mingwRoot -Include 'libmingwex.a','libmingw32.a','libgcc.a','libkernel32.a','libucrt.a','libmsvcrt.a' -Recurse -ErrorAction SilentlyContinue |
+          $libDirs = Get-ChildItem -Path $mingwRoot -Include 'libmingwex.a','libmingw32.a','libgcc.a','libkernel32.a','libucrt.a','libmsvcrt.a','libwinpthread.a' -Recurse -ErrorAction SilentlyContinue |
             ForEach-Object { $_.DirectoryName } | Sort-Object -Unique
           if (-not $libDirs) { throw "no mingw runtime import libraries (libmingwex.a etc.) found under $mingwRoot" }
           Add-Content -Path $env:GITHUB_ENV -Value "MINGW_LIB_DIRS=$($libDirs -join ';')"
