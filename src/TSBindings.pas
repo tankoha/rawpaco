@@ -29,14 +29,13 @@ unit TSBindings;
 // しているmingw(niXman mingw-builds 16.1.0)はucrtランタイムなので
 // crtは`ucrt`を指定する。
 //
-// mingwex/mingw32/gcc/ucrt/kernel32を一通り並べてもatexitだけが
-// Undefined symbolとして残った。mingwex/mingw32/gccをucrt/kernel32の後に
-// もう一度並べる2周目の走査（循環参照対策の古典的回避策）も試したが
-// 変化がなく、そもそもこの5つのいずれにもatexitが存在しないと判明。
-// pinしているmingw(niXman mingw-builds 16.1.0)は"posix"スレッディング
-// モデルのビルドであり、posixスレッディング版mingw-w64はatexitの
-// スレッドセーフな登録処理をlibwinpthreadに依存することが多いため、
-// これを追加する。
+// これらを一通り並べてもatexitだけがUndefined symbolとして最後まで残った。
+// nmで全.aファイルを直接調べたところ、pinしているmingw-w64(niXman
+// mingw-builds 16.1.0, UCRT)はどのインポートライブラリにもプレーンな
+// `atexit`シンボルを公開していないと判明（UCRT環境では<stdlib.h>の
+// インライン展開経由でのみ提供され、実体は`_crt_atexit`。詳細はHANDOFF.md
+// 参照）。src/win32_atexit_shim.c で`_crt_atexit`へ転送する薄いシムを
+// 提供し、build/win32_atexit_shim.o として静的リンクすることで解決する。
 {$IFDEF MSWINDOWS}
 {$linklib mingwex}
 {$linklib mingw32}
@@ -47,6 +46,7 @@ unit TSBindings;
 {$linklib mingwex}
 {$linklib mingw32}
 {$linklib gcc}
+{$L ../build/win32_atexit_shim.o}
 {$ENDIF}
 {$L ../build/tree-sitter.o}
 {$L ../build/tree-sitter-pascal.o}

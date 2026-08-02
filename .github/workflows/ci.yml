@@ -67,30 +67,17 @@ jobs:
           if (-not $libDirs) { throw "no mingw runtime import libraries (libmingwex.a etc.) found under $mingwRoot" }
           Add-Content -Path $env:GITHUB_ENV -Value "MINGW_LIB_DIRS=$($libDirs -join ';')"
 
-      # 10回目・11回目のCI失敗でatexitだけがUndefined symbolとして残り続け、
-      # 手持ちの.a(mingwex/mingw32/gcc/ucrt/kernel32/winpthread)のどれが
-      # 実際にatexitを定義しているのか推測だけでは埒が明かなかったため、
-      # nmで全.aファイルを直接調べて実際の所在を特定する（一時的な診断
-      # ステップ。原因判明後に削除予定）。
-      - name: Diagnose atexit symbol location
-        shell: bash
-        run: |
-          mingw_root="$(dirname "$(dirname "$(command -v gcc)")")"
-          echo "mingw_root=$mingw_root"
-          find "$mingw_root" -name '*.a' | while read -r lib; do
-            hit=$(nm "$lib" 2>/dev/null | grep -i 'atexit' || true)
-            if [ -n "$hit" ]; then
-              echo "=== $lib ==="
-              echo "$hit"
-            fi
-          done
-
+      # pinしているmingw-w64(niXman mingw-builds 16.1.0, UCRT)はどの
+      # インポートライブラリにもプレーンな`atexit`シンボルを公開していない
+      # ことをnmで全.aファイルを直接調べて確認済み（詳細はHANDOFF.md参照）。
+      # src/win32_atexit_shim.c で`_crt_atexit`へ転送する薄いシムを提供する。
       - name: Build vendor objects
         shell: bash
         run: |
           mkdir -p build
           gcc -c vendor/tree-sitter/src/lib.c -I vendor/tree-sitter/include -I vendor/tree-sitter/src -o build/tree-sitter.o
           gcc -c vendor/tree-sitter-pascal/src/parser.c -I vendor/tree-sitter-pascal/src -I vendor/tree-sitter/include -o build/tree-sitter-pascal.o
+          gcc -c src/win32_atexit_shim.c -o build/win32_atexit_shim.o
 
       - name: Build rawpaco
         shell: bash
