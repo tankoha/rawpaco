@@ -34,18 +34,13 @@ unit TSBindings;
 // mingw-builds 16.1.0, UCRT)はどのインポートライブラリにもプレーンな
 // `atexit`シンボルを公開していないと判明（UCRT環境では<stdlib.h>の
 // インライン展開経由でのみ提供され、実体は`_crt_atexit`。詳細はHANDOFF.md
-// 参照）。Cのシム(.o)を{$L}で埋め込む方式を試したが、ppc386.exe自体が
-// COFF読み込み処理中にEAccessViolationでクラッシュした（おそらく極小
-// オブジェクトファイルに対するFPC側のCOFFリーダーのエッジケースバグ）。
-// C側の実装・{$L}embedを避け、下記WindowsAtExitShim関数のようにPascal側で
-// `_crt_atexit`へ転送する薄い関数を書きエクスポートすることで解決する
-// （implementation部を参照）。`public name`は明示的な名前をそのまま使う
-// ため、win32ターゲットでcdecl関数に自動付与される先頭アンダースコアの
-// 恩恵を受けない（`external;`のように名前省略時のみ自動付与される）。
-// リンカが探すシンボルは`_atexit`（gcc側のcdecl命名規約由来）なので
-// `public name '_atexit'`と明示的にアンダースコアを含めて指定する。
-// 同様に`_crt_atexit`側は名前省略の`external;`のため自動付与により
-// `__crt_atexit`として解決される（nmで実在を確認済み、libmsvcrt.a等）。
+// 参照）。Cのシム(.o)を{$L}で埋め込む方式、Pascal側で`_crt_atexit`へ
+// 転送する関数を`public name '_atexit'`でエクスポートする方式もいずれも
+// ppc386.exe自体がEAccessViolationでクラッシュした（先頭アンダースコアの
+// シンボルをFPCが書き出す/読み込む処理に何らかのバグがある模様。詳細は
+// HANDOFF.md参照）。FPCに新規シンボルを一切書き出させず、CI
+// (.github/workflows/ci.yml)側でリンカの`--defsym`機能により`_atexit`を
+// 既存の`__crt_atexit`のエイリアスとして解決する方式に変更した。
 {$IFDEF MSWINDOWS}
 {$linklib mingwex}
 {$linklib mingw32}
@@ -84,14 +79,5 @@ function ts_node_string(node: TSNode): PAnsiChar; cdecl; external;
 function tree_sitter_pascal: TSLanguage; cdecl; external name 'tree_sitter_pascal';
 
 implementation
-
-{$IFDEF MSWINDOWS}
-function _crt_atexit(func: Pointer): LongInt; cdecl; external;
-
-function WindowsAtExitShim(func: Pointer): LongInt; cdecl; public name '_atexit';
-begin
-  Result := _crt_atexit(func);
-end;
-{$ENDIF}
 
 end.
