@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install FPC
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y fpc
+
+      - name: Build (vendor objects + rawpaco)
+        run: make
+
+      - name: Run bootstrap self-check
+        run: ./src/rawpaco
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install FPC and MinGW (gcc)
+        run: choco install -y freepascal mingw
+
+      - name: Build vendor objects
+        shell: bash
+        run: |
+          mkdir -p build
+          gcc -c vendor/tree-sitter/src/lib.c -I vendor/tree-sitter/include -I vendor/tree-sitter/src -o build/tree-sitter.o
+          gcc -c vendor/tree-sitter-pascal/src/parser.c -I vendor/tree-sitter-pascal/src -I vendor/tree-sitter/include -o build/tree-sitter-pascal.o
+
+      - name: Build rawpaco
+        shell: bash
+        run: fpc src/rawpaco.lpr
+
+      - name: Run bootstrap self-check
+        shell: bash
+        run: ./src/rawpaco.exe
