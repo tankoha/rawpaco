@@ -28,7 +28,8 @@
 - `vendor/tree-sitter-pascal/`: `v0.10.2` で固定。生成済み `src/parser.c` を取り込み済み（外部スキャナ(scanner.c)なし）。生成時ABIも14で一致（`LANGUAGE_VERSION 14`）。tree-sitter本体はABI13〜14を互換サポートしており組み合わせ上の問題なし。
 - ビルド: リポジトリルートの `Makefile` が `vendor/*/src/*.c` を `gcc` でコンパイルし `build/*.o` を生成、`src/TSBindings.pas` の `{$L ../build/tree-sitter.o}` 等で静的リンクする。`make` 一発で `src/rawpaco` まで生成される。
 - 既知の落とし穴: `-k` 経由で手動に `-lc` を渡すとFPCがダイナミックリンカのパスを誤検出し（このUbuntu環境では存在しない `/lib/ld64.so.1` になる）実行不能バイナリが生成される。`{$linklib c}` ディレクティブでFPC自身にlibcリンクを解決させることで回避（`TSBindings.pas` にコメントあり）。
-- Windows CI初回実行（2026-08-02, run 30759838476）: `build-linux` は成功。`build-windows` は `fpc: command not found` で失敗。原因はchocoインストールによるマシンPATH（レジストリ）更新が、GitHub Actionsの同一ジョブ内後続ステップ（別プロセスとして起動）に反映されないため。gccが動いていたのは、mingwインストールが効いたのではなく、Windowsランナーに元々含まれる別経路のgcc（Strawberry Perl等）がPATHにあったためと推測。対策として、chocoインストール直後に `fpc.exe` / `gcc.exe` の実際の設置場所を検索し `$GITHUB_PATH` に明示追記するよう修正済み。再実行結果は未確認（要フォローアップ）。
+- Windows CI初回実行（2026-08-02, run 30759838476）: `build-linux` は成功。`build-windows` は `fpc: command not found` で失敗。原因はchocoインストールによるマシンPATH（レジストリ）更新が、GitHub Actionsの同一ジョブ内後続ステップ（別プロセスとして起動）に反映されないため。gccが動いていたのは、mingwインストールが効いたのではなく、Windowsランナーに元々含まれる別経路のgcc（Strawberry Perl等）がPATHにあったためと推測。対策として、chocoインストール直後に `fpc.exe` / `gcc.exe` の実際の設置場所を検索し `$GITHUB_PATH` に明示追記した。
+- Windows CI 2回目実行（run 30760907748）: `fpc` は見つかるようになったが今度は `Illegal COFF Magic`（32bit/64bitのオブジェクト形式不一致）と `Import library not found for c` で失敗。chocoの `freepascal` パッケージは実際には32bit(`ppc386.exe`)と64bit(`ppcx64.exe`)の両方を同一install先に入れる（`ChocolateyInstall.ps1` を確認: `Get-OSArchitectureWidth 64` の場合に `fpc-3.2.2.win32.and.win64.exe` を追加インストールする作りだが、PATHに登録されるのは32bit側のみ）。mingwのgccは64bitオブジェクトを生成するため、fpc呼び出し側で `-Px86_64 -Twin64` を明示して揃えるよう修正。また `{$linklib c}` はLinux固有の対処（ld64.so.1問題の回避）であり、Windowsには対応する`c`という名のインポートライブラリが存在せずエラーになるため `{$IFDEF LINUX}` で囲みLinux限定にした（`TSBindings.pas`）。この修正の再実行結果は未確認（要フォローアップ）。
 
 ## 直近セッションのメモ
 

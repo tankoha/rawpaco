@@ -11,11 +11,15 @@ unit TSBindings;
 // バージョン固定方針）。build/*.o は `make`（またはビルドスクリプト）で
 // vendor/ 配下のCソースから事前生成すること。
 //
-// {$linklib c} は必須: -k経由で手動に-lcを渡すとFPCがダイナミックリンカの
-// パスを誤検出し(このUbuntu環境では存在しない/lib/ld64.so.1になる)実行不能な
-// バイナリが生成される。{$linklib c}でFPC自身にlibcリンクを解決させることで
-// 正しいインタプリタパス(/lib64/ld-linux-x86-64.so.2等)が設定される。
+// {$linklib c} はLinuxでのみ必須: -k経由で手動に-lcを渡すとFPCがダイナミック
+// リンカのパスを誤検出し(このUbuntu環境では存在しない/lib/ld64.so.1になる)
+// 実行不能なバイナリが生成される。{$linklib c}でFPC自身にlibcリンクを解決
+// させることで正しいインタプリタパス(/lib64/ld-linux-x86-64.so.2等)が設定
+// される。Windowsには対応する'c'という名のインポートライブラリが存在せず
+// 「Import library not found for c」でリンクエラーになるため対象外とする。
+{$IFDEF LINUX}
 {$linklib c}
+{$ENDIF}
 {$L ../build/tree-sitter.o}
 {$L ../build/tree-sitter-pascal.o}
 

@@ -50,9 +50,14 @@ jobs:
           gcc -c vendor/tree-sitter/src/lib.c -I vendor/tree-sitter/include -I vendor/tree-sitter/src -o build/tree-sitter.o
           gcc -c vendor/tree-sitter-pascal/src/parser.c -I vendor/tree-sitter-pascal/src -I vendor/tree-sitter/include -o build/tree-sitter-pascal.o
 
+      # chocoの freepascal パッケージは既定では32bit(ppc386.exe)を呼び出すが、
+      # 64bit OS向けにwin64クロスコンパイラ(ppcx64.exe)も同梱でインストール
+      # される。mingwのgccは64bitオブジェクトを生成するため、ターゲットを
+      # 明示的に64bitに揃える(-Px86_64 -Twin64)。揃えないと
+      # 「Illegal COFF Magic」でリンクに失敗する（初回CI実行で確認済み）。
       - name: Build rawpaco
         shell: bash
-        run: fpc src/rawpaco.lpr
+        run: fpc -Px86_64 -Twin64 src/rawpaco.lpr
 
       - name: Run bootstrap self-check
         shell: bash
