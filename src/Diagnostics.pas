@@ -26,11 +26,13 @@ type
   TLintContext = class
   private
     FFileName: string;
+    FSource: AnsiString;
     FDiagnostics: TDiagnosticList;
   public
-    constructor Create(const AFileName: string);
+    constructor Create(const AFileName: string; const ASource: AnsiString);
     destructor Destroy; override;
     procedure Report(const ARuleId, AMessage: string; const Node: TSNode);
+    function GetNodeText(const Node: TSNode): AnsiString;
     property FileName: string read FFileName;
     property Diagnostics: TDiagnosticList read FDiagnostics;
   end;
@@ -39,10 +41,11 @@ function FormatDiagnosticText(const Diag: TDiagnostic): string;
 
 implementation
 
-constructor TLintContext.Create(const AFileName: string);
+constructor TLintContext.Create(const AFileName: string; const ASource: AnsiString);
 begin
   inherited Create;
   FFileName := AFileName;
+  FSource := ASource;
   FDiagnostics := TDiagnosticList.Create;
 end;
 
@@ -65,6 +68,20 @@ begin
   Diag.Column := Point.column + 1;
   Diag.Severity := svWarning;
   FDiagnostics.Add(Diag);
+end;
+
+function TLintContext.GetNodeText(const Node: TSNode): AnsiString;
+var
+  StartByte, EndByte: LongWord;
+begin
+  // ts_node_start_byte/end_byteは0-originのバイトオフセット(api.h)。
+  // FPCのCopyは1-originなので+1する(Reportの行番号+1と同じ理由)。
+  // RAWPACO-DEFENSE-001は木の構造しか見なかったため、これまでTLintContext
+  // はソース本文を一切保持していなかった。RAWPACO-SEC-001/002で識別子名・
+  // 文字列リテラルの実テキストが初めて必要になったため追加する。
+  StartByte := ts_node_start_byte(Node);
+  EndByte := ts_node_end_byte(Node);
+  Result := Copy(FSource, StartByte + 1, EndByte - StartByte);
 end;
 
 function FormatDiagnosticText(const Diag: TDiagnostic): string;

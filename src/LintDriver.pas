@@ -64,7 +64,7 @@ begin
       Tree := ts_parser_parse_string(Parser, nil, PAnsiChar(Source), Length(Source));
       try
         Root := ts_tree_root_node(Tree);
-        Ctx := TLintContext.Create(FileName);
+        Ctx := TLintContext.Create(FileName, Source);
         try
           WalkTree(Root, Ctx);
           for Diag in Ctx.Diagnostics do

@@ -96,6 +96,14 @@ function ts_node_field_name_for_child(node: TSNode; index: LongWord): PAnsiChar;
 function ts_node_start_point(node: TSNode): TSPoint; cdecl; external;
 function ts_node_end_point(node: TSNode): TSPoint; cdecl; external;
 
+// AST走査用の追加(RAWPACO-SEC-001/RAWPACO-SEC-002実装に伴う拡張)。
+// シグネチャは vendor/tree-sitter/include/tree_sitter/api.h の474/484行目で
+// 確認済み(CLAUDE.mdルール1)。戻り値はuint32_tなので、既存のts_node_child_
+// count等と同じLongWordで受ける。識別子・文字列リテラルの実テキストを
+// ソースバイト列から切り出す(TLintContext.GetNodeText)ために必要。
+function ts_node_start_byte(node: TSNode): LongWord; cdecl; external;
+function ts_node_end_byte(node: TSNode): LongWord; cdecl; external;
+
 function tree_sitter_pascal: TSLanguage; cdecl; external name 'tree_sitter_pascal';
 
 implementation

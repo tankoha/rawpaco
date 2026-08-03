@@ -7,6 +7,7 @@
 | ID | 内容 | 状態 | 備考 |
 |---|---|---|---|
 | RAWPACO-DEFENSE-001 | 空のexceptハンドラ(例外の握りつぶし)検知 | 実装済み | `src/Rules/RuleDefense001.pas`。設計書P1。positive 3件/negative 4件、`make test`で検証 |
+| RAWPACO-SEC-001 | SQL文字列連結(SQLインジェクションの疑い)検知 | 実装済み | `src/Rules/RuleSec001.pas`。設計書P2。positive 3件/negative 2件。片方だけがSQLキーワードを含むliteralStringで、もう片方が非リテラルの場合のみ検知(両方リテラル/両方非リテラルは対象外) |
 
 ## 見送ったルール（検討済み・意図的に未実装）
 
@@ -15,10 +16,11 @@
 ## tree-sitter-pascal 文法カバレッジの既知の穴
 
 - `docs/RULE_ENGINE_DESIGN.md`のP1設計時点での想定（`exceptionHandler`/`exceptionElse`がexcept節全体を表すノードであるかのような記述）は誤りだった。実際はtry/except/finally全体が単一ノード種別`try`であり、`except`フィールド(multiple:true)に`kExcept`トークンと`statements`/`exceptionHandler`/`exceptionElse`が並ぶ構造。`vendor/tree-sitter-pascal/src/node-types.json`とgrammar.jsで直接確認する必要がある(ドキュメントの想定を鵜呑みにしない)。詳細は`src/Rules/RuleDefense001.pas`冒頭コメント参照。
+- P2実装時に確認: 二項式は`exprBinary`(フィールドlhs/operator/rhs)、`+`演算子はoperatorフィールドの子`kAdd`(無名の`'+'`トークンではない)。文字列リテラルは`literalString`で、`ts_node_start_byte`/`end_byte`で切り出したテキストは前後の引用符を含む(値だけを返すフィールドは無い)。詳細は`src/Rules/RuleSec001.pas`冒頭コメント参照。
 
 ## 自己lint到達状況
 
-- 本ツール自身のソースへの自己適用: `./src/rawpaco src/*.pas src/Rules/*.pas` をローカルで実行し、誤検知・真陽性ともにゼロを確認済み（2026-08-03時点、RAWPACO-DEFENSE-001のみ）。
+- 本ツール自身のソースへの自己適用: `./src/rawpaco src/*.pas src/Rules/*.pas` をローカルで実行し、誤検知・真陽性ともにゼロを確認済み（2026-08-04時点、RAWPACO-DEFENSE-001・RAWPACO-SEC-001）。
 - CIへの自己lintステップ追加: 未実施（ルールが1つしかなく、`--only`/`--exclude`によるルール個別スコープ導入の効果がまだ薄いため見送り。ルールが増えてきたら`docs/RULE_ENGINE_DESIGN.md`5節の手順で段階導入する）。
 
 ## tree-sitter本体・tree-sitter-pascalのvendoring方針（確定）
