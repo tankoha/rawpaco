@@ -6,7 +6,7 @@
 
 | ID | 内容 | 状態 | 備考 |
 |---|---|---|---|
-| (未着手) | | | |
+| RAWPACO-DEFENSE-001 | 空のexceptハンドラ(例外の握りつぶし)検知 | 実装済み | `src/Rules/RuleDefense001.pas`。設計書P1。positive 3件/negative 4件、`make test`で検証 |
 
 ## 見送ったルール（検討済み・意図的に未実装）
 
@@ -14,13 +14,12 @@
 
 ## tree-sitter-pascal 文法カバレッジの既知の穴
 
-- (未検証。着手後、パース失敗・誤認識した構文とサンプルコードをここに追記)
+- `docs/RULE_ENGINE_DESIGN.md`のP1設計時点での想定（`exceptionHandler`/`exceptionElse`がexcept節全体を表すノードであるかのような記述）は誤りだった。実際はtry/except/finally全体が単一ノード種別`try`であり、`except`フィールド(multiple:true)に`kExcept`トークンと`statements`/`exceptionHandler`/`exceptionElse`が並ぶ構造。`vendor/tree-sitter-pascal/src/node-types.json`とgrammar.jsで直接確認する必要がある(ドキュメントの想定を鵜呑みにしない)。詳細は`src/Rules/RuleDefense001.pas`冒頭コメント参照。
 
 ## 自己lint到達状況
 
-- 本ツール自身のソースへの自己適用: 未実施
-- 鶏卵問題の解消範囲: N/A（lintルールが1つも存在しないため、CIへの自己lintステップ追加は次回以降に見送り。CLAUDE.mdルール4は最初のルール実装後に着手）
-- 鶏卵問題の解消手順は `docs/RULE_ENGINE_DESIGN.md` の「自己lint組み込みへの道筋」に設計済み。次にルールを実装する際はそちらを参照。
+- 本ツール自身のソースへの自己適用: `./src/rawpaco src/*.pas src/Rules/*.pas` をローカルで実行し、誤検知・真陽性ともにゼロを確認済み（2026-08-03時点、RAWPACO-DEFENSE-001のみ）。
+- CIへの自己lintステップ追加: 未実施（ルールが1つしかなく、`--only`/`--exclude`によるルール個別スコープ導入の効果がまだ薄いため見送り。ルールが増えてきたら`docs/RULE_ENGINE_DESIGN.md`5節の手順で段階導入する）。
 
 ## tree-sitter本体・tree-sitter-pascalのvendoring方針（確定）
 

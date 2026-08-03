@@ -14,7 +14,10 @@ BUILD := build
 TS_OBJ := $(BUILD)/tree-sitter.o
 TSP_OBJ := $(BUILD)/tree-sitter-pascal.o
 
-.PHONY: all clean
+RULE_SOURCES := src/Diagnostics.pas src/RuleRegistry.pas src/ASTWalker.pas \
+                src/LintDriver.pas src/Rules/RuleDefense001.pas src/Rules/AllRules.pas
+
+.PHONY: all clean test
 
 all: src/rawpaco
 
@@ -29,9 +32,15 @@ $(TSP_OBJ): $(VENDOR_TSP)/src/parser.c | $(BUILD)
 
 # TSBindings.pasの{$L ../build/*.o}がこの2ファイルを直接参照するため、
 # fpc呼び出し自体はオブジェクト経路を意識しない単純な形のままにできる。
-src/rawpaco: src/rawpaco.lpr src/TSBindings.pas $(TS_OBJ) $(TSP_OBJ)
-	$(FPC) src/rawpaco.lpr
+# -Fusrc/Rules は src/Rules/ 配下のユニット(AllRules等)をFPCが見つける
+# ためのユニット検索パス追加(rawpaco.lprと同じsrc/直下のユニットは
+# このフラグなしでも見つかる)。
+src/rawpaco: src/rawpaco.lpr src/TSBindings.pas $(RULE_SOURCES) $(TS_OBJ) $(TSP_OBJ)
+	$(FPC) -Fusrc/Rules src/rawpaco.lpr
+
+test: src/rawpaco
+	bash tests/run_tests.sh
 
 clean:
 	rm -rf $(BUILD)
-	rm -f src/rawpaco src/*.o src/*.ppu
+	rm -f src/rawpaco src/*.o src/*.ppu src/Rules/*.o src/Rules/*.ppu

@@ -21,6 +21,9 @@ jobs:
       - name: Run bootstrap self-check
         run: ./src/rawpaco
 
+      - name: Run rule sample tests
+        run: make test
+
   build-windows:
     runs-on: windows-latest
     steps:
@@ -117,8 +120,12 @@ jobs:
           for d in "${DIRS[@]}"; do
             FL_ARGS+=("-Fl$d")
           done
-          fpc -Xe -kbuild/win32_atexit_shim.o -k--allow-multiple-definition -k--strip-debug "${FL_ARGS[@]}" src/rawpaco.lpr
+          fpc -Xe -kbuild/win32_atexit_shim.o -k--allow-multiple-definition -k--strip-debug -Fusrc/Rules "${FL_ARGS[@]}" src/rawpaco.lpr
 
       - name: Run bootstrap self-check
         shell: bash
         run: ./src/rawpaco.exe
+
+      - name: Run rule sample tests
+        shell: bash
+        run: bash tests/run_tests.sh

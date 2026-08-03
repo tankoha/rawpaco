@@ -70,6 +70,10 @@ type
     Tree: PTSTree;
   end;
 
+  TSPoint = record
+    row, column: LongWord;
+  end;
+
 function ts_parser_new: TSParser; cdecl; external;
 procedure ts_parser_delete(parser: TSParser); cdecl; external;
 function ts_parser_set_language(parser: TSParser; language: TSLanguage): Boolean; cdecl; external;
@@ -77,6 +81,20 @@ function ts_parser_parse_string(parser: TSParser; old_tree: PTSTree; const sourc
 function ts_tree_root_node(tree: PTSTree): TSNode; cdecl; external;
 procedure ts_tree_delete(tree: PTSTree); cdecl; external;
 function ts_node_string(node: TSNode): PAnsiChar; cdecl; external;
+
+// AST走査用の追加(ルール第1号 RAWPACO-DEFENSE-001実装に伴う拡張)。
+// シグネチャは vendor/tree-sitter/include/tree_sitter/api.h で確認済み
+// (CLAUDE.mdルール1)。TSNodeを値渡しで返すts_node_child/ts_node_named_child
+// は、既に動作実績のあるts_tree_root_nodeと同じ規約なので安全。
+function ts_node_type(node: TSNode): PAnsiChar; cdecl; external;
+function ts_node_is_null(node: TSNode): Boolean; cdecl; external;
+function ts_node_child_count(node: TSNode): LongWord; cdecl; external;
+function ts_node_named_child_count(node: TSNode): LongWord; cdecl; external;
+function ts_node_child(node: TSNode; index: LongWord): TSNode; cdecl; external;
+function ts_node_named_child(node: TSNode; index: LongWord): TSNode; cdecl; external;
+function ts_node_field_name_for_child(node: TSNode; index: LongWord): PAnsiChar; cdecl; external;
+function ts_node_start_point(node: TSNode): TSPoint; cdecl; external;
+function ts_node_end_point(node: TSNode): TSPoint; cdecl; external;
 
 function tree_sitter_pascal: TSLanguage; cdecl; external name 'tree_sitter_pascal';
 
