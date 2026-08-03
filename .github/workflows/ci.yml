@@ -97,10 +97,15 @@ jobs:
 
           inspect() {
             echo "--- ls:"; ls -l src/rawpaco.exe
-            echo "--- objdump -f:"; objdump -f src/rawpaco.exe 2>&1 | head -12
-            echo "--- objdump -h:"; objdump -h src/rawpaco.exe 2>&1 | head -30
-            echo "--- head bytes:"; od -A d -t x1 -N 64 src/rawpaco.exe
+            echo "--- objdump -h:"; objdump -h src/rawpaco.exe 2>&1 | head -20
+            echo "--- objdump -p:"; objdump -p src/rawpaco.exe 2>&1 | head -45
             echo "--- run:"; timeout 30 ./src/rawpaco.exe < /dev/null; echo "exit=$?"
+            echo "--- run after strip:"
+            cp src/rawpaco.exe src/rawpaco_stripped.exe
+            strip src/rawpaco_stripped.exe
+            objdump -h src/rawpaco_stripped.exe 2>&1 | head -12
+            timeout 30 ./src/rawpaco_stripped.exe < /dev/null; echo "exit=$?"
+            rm -f src/rawpaco_stripped.exe
           }
 
           attempt() {
@@ -117,5 +122,6 @@ jobs:
           }
 
           attempt E-allow-multiple-def -Xe -kbuild/win32_atexit_shim.o -k--allow-multiple-definition "${FL_ARGS[@]}"
-          attempt H-stripped-libmingw32 -Xe -kbuild/win32_atexit_shim.o -Flbuild/lib "${FL_ARGS[@]}"
+          attempt I-Xs -Xe -kbuild/win32_atexit_shim.o -k--allow-multiple-definition -Xs "${FL_ARGS[@]}"
+          attempt J-strip-debug -Xe -kbuild/win32_atexit_shim.o -k--allow-multiple-definition -k--strip-debug "${FL_ARGS[@]}"
           exit 0
