@@ -5,6 +5,12 @@ Rawpaco is a RAccoon Washing PAscal COde.
 tree-sitter-pascal を用いた、FPC/Lazarus 向け Pascal 静的解析（lint）ツール。
 A static analysis (lint) tool for FPC/Lazarus Pascal, built on tree-sitter-pascal.
 
+## 目的 / Motivation
+
+AI（LLM）によるコード生成は便利な一方、命名規則やエラーハンドリングの一貫性のムラ、過剰な防御的コーディング、存在しないAPIの使用（hallucination）、セキュリティ考慮の漏れといった特有の問題を生みやすい傾向があります。rawpacoは、これらをGitHub Actions上でpushごとに検出することで、AIによるPascal開発の品質を継続的に高めることを目的としています。
+
+AI-generated code tends to introduce characteristic issues — inconsistent naming and error-handling conventions across sessions, excessive defensive coding, use of nonexistent APIs (hallucination), and overlooked security concerns. rawpaco aims to catch these on every push via GitHub Actions, helping keep AI-assisted Pascal development consistently high quality.
+
 ## 状態 / Status
 
 初期段階（ブートストラップ）。lint ルールは未実装。
