@@ -2,6 +2,14 @@
 
 [docs/RULE_ENGINE_DESIGN.md](RULE_ENGINE_DESIGN.md) で設計したルールエンジンについて、全体の流れをMermaid図でまとめたものです。設計の詳細・各要素の担当（Sonnet5/Opus5）は設計書側を参照してください。
 
+現時点で `src/` 配下に実際に存在する各ソースファイル単位のプログラムフローは [docs/flows/](flows/) 配下に個別ファイルとしてまとめています。
+
+- [docs/flows/rawpaco_lpr.md](flows/rawpaco_lpr.md) — `src/rawpaco.lpr`（現状は自己チェック用プログラム）
+- [docs/flows/tsbindings_pas.md](flows/tsbindings_pas.md) — `src/TSBindings.pas`（実行時ロジックを持たないコンパイル/リンクフロー）
+- [docs/flows/win32_atexit_shim_c.md](flows/win32_atexit_shim_c.md) — `src/win32_atexit_shim.c`（Windows専用のatexit転送シム）
+
+`vendor/` 配下の第三者コード（tree-sitter本体・tree-sitter-pascalの生成済みパーサ）は対象外としています。
+
 ## 1. GitHub Actions統合フロー（外部から見た全体像）
 
 rawpacoがどのようにCIへ組み込まれ、開発ループに影響するかを示します。
