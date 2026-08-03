@@ -10,6 +10,7 @@
 | RAWPACO-SEC-001 | SQL文字列連結(SQLインジェクションの疑い)検知 | 実装済み | `src/Rules/RuleSec001.pas`。設計書P2。positive 3件/negative 2件。片方だけがSQLキーワードを含むliteralStringで、もう片方が非リテラルの場合のみ検知(両方リテラル/両方非リテラルは対象外) |
 | RAWPACO-SEC-002 | シークレットらしき文字列のハードコード検知 | 実装済み | `src/Rules/RuleSec002.pas`。設計書P3。positive 4件/negative 3件。`identifier := literalString`の単純代入と`declVar`/`declConst`の初期値付き宣言が対象。識別子名は接尾辞一致(単純部分一致だと`TokenList`等を誤検知するため)、値はプレースホルダらしき部分一致で除外 |
 | RAWPACO-DEPR-001 | 自己矛盾する非推奨API使用(同一ファイル内)検知 | 実装済み | `src/Rules/RuleDepr001.pas`。設計書P4。positive 3件/negative 2件。`deprecated`属性付き`declProc`の名前を集め、同一ファイル内の`exprCall`(括弧付き呼び出し)・裸の識別子文(括弧なし呼び出し)と照合。`Obj.Method`のようなクラスメソッド呼び出しは対象外 |
+| RAWPACO-DEPR-002 | FPC RTL/FCLの`deprecated`シンボル使用検知 | 実装済み | `src/Rules/RuleDepr002.pas`。設計書P6。positive 5件/negative 3件。`data/fpc-rtl-symbols.txt`(静的データ)を`src/FPCSymbols.pas`が読む。検知対象は「ユニットレベルで公開されているdeprecatedシンボル」29件(`SysUtils.DecimalSeparator`等の書式グローバル変数群、`SysUtils.GetTickCount`等)。fpc-source全体(4894ファイル)で誤検知ゼロを実測 |
 
 ## 見送ったルール（検討済み・意図的に未実装）
 
@@ -22,7 +23,20 @@
 - P3実装時に確認: `declVar`/`declConst`の`defaultValue`フィールドの中身(`defaultValue`ノード)自体はフィールドを持たず、`kEq`トークンと初期値式が位置的に並ぶだけ。フィールド名検索ではなく「`kEq`以外の子」を位置的に拾う必要がある。手続き引数の`var`宣言は`declVar`ではなく別ノード種別`declArg`。詳細は`src/Rules/RuleSec002.pas`冒頭コメント参照。
 - RAWPACO-SEC-002の既知のスコープ外(次の拡張候補): `Obj.Password := 'x'`のような`exprDot`経由のプロパティ・フィールド代入は検知しない。実務では単純な`identifier := literalString`より一般的な可能性すらあるパターンだが、末端の識別子名を取り出すロジックが別途必要で第一段のスコープを超えるため見送った。
 - P4実装時に確認: 手続き・関数宣言は`declProc`(procedure/function/constructor/destructor共通)。括弧付き呼び出し`Foo()`は`exprCall`(フィールド`entity`)になるが、括弧なし呼び出し`Foo;`(引数なし手続きのPascal的な書き方)は`exprCall`にならず、`statement`ノードが唯一の子として直接`identifier`を持つだけの形になる。両方を見ないと呼び出しを取りこぼす。詳細は`src/Rules/RuleDepr001.pas`冒頭コメント参照。
+- P6実装時に確認: `A.B`は`exprDot`(フィールド`lhs`/`operator`/`rhs`)だが、`procedure TFoo.Bar;`のような実装ヘッダの名前は`exprDot`ではなく**`genericDot`**という別ノード種別になる（宣言名なので使用箇所として数えてはいけない）。`uses`節は`declUses`で各ユニットは`moduleName`ノード。`declVar`/`declField`は`A, B: Integer;`のように`name`フィールドを複数持ちうる。クラス/レコード/オブジェクトはいずれも`declClass`(先頭の子トークンが`kClass`/`kRecord`/`kObject`で区別)、インターフェースは`declIntf`、ヘルパは`declHelper`。可視性は`declSection`配下の`kPrivate`/`kProtected`/`kPublic`/`kPublished`(+`kStrict`)。`class var`はクラス内でも`declVars`/`declVar`になり`declField`にはならない。詳細は`src/Rules/RuleDepr002.pas`冒頭コメント参照。
+- P6実装時の実測知見（誤検知対策）: `with Rec do ... end` の本体では裸の識別子がレコードのフィールドを指すため、型解決なしでは RTL のグローバル変数と区別できない。fpc-source 全体(4894ファイル)に当てたところ、`with FormatSettings do begin DecimalSeparator := '.'; ... end` という典型的（かつ推奨される）書き方が誤検知の最大要因（91件中58件）だった。`with`の`body`フィールド配下は走査しないことで解消し、残り33件は全て真陽性であることを目視確認済み。
 - P4実装時の設計判断: `RuleRegistry`に登録されるルールインスタンスは`initialization`で一度だけ生成され、`RunLint`が複数ファイルを処理する間ずっと使い回される。RAWPACO-DEPR-001は「ファイル内でdeprecated宣言を集めてから使用箇所を照合する」という2パス処理(ファイル単位の一時的な状態)が必要だが、インスタンスフィールドに状態を持たせるとファイルをまたいで漏れる。これを避けるため`InterestedNodeTypes`を最上位の`root`ノードのみとし、1ファイルにつき1回のCheck呼び出しの中でローカル変数を使って自己完結した探索を行う設計とした(ASTWalker等の共通インフラは無改修)。複数ファイルを1回の実行で渡し、片方だけにdeprecated宣言がある状態で状態漏れがないことを実装時に確認済み。
+
+## FPC RTL/FCL シンボル一覧 (`data/fpc-rtl-symbols.txt`) について
+
+- 生成コマンド: `bash tools/gen_fpc_symbols.sh`（Linux専用。`fpc-source` と `ppudump` が必要）。
+- 生成時の環境: FPC 3.2.2（Ubuntu 24.04 の apt 版 `fpc-3.2.2 3.2.2+dfsg-32`）、ターゲット `x86_64-linux`。
+- 方式の決定（静的コミット vs 動的生成）: **静的コミット**を採用。理由は (1) Windows CI の choco 版 freepascal に `fpc-source` が同梱されている保証がなく、これまでも標準ライブラリの検索パスで繰り返し問題が起きている、(2) `.ppu` の内容はターゲット OS/CPU ごとに変わるため、Linux CI と Windows CI でそれぞれ生成すると同じソースへの lint 結果が環境で変わってしまい再現性がない、(3) 生成物をリポジトリに置けば tree-sitter-pascal のピン留め（CLAUDE.mdルール2）と同じレベルの再現性が得られる。
+- 抽出元は Pascal ソースではなく `.ppu`（`ppudump -VSD`）。RTL のソースは `{$i}` と `{$ifdef}` が深く、正しく展開するには実質 FPC のプリプロセッサ相当が必要になるため。`.ppu` は FPC 自身のコンパイル結果であり公開シンボルと deprecated ヒントの権威ある一覧そのもの。
+- **プラットフォーム差の扱い**: `.ppu` は Linux 版なので、`SysUtils.Win32MajorVersion` のような Windows 専用シンボルが欠ける。これを補うため、`fpc-source` 側の各プラットフォーム版ソースの interface 部から識別子を総なめして「既知の名前(M行)」に足し込んでいる（`tools/source_idents.awk`）。M行は警告を抑制する方向にしか効かないので、多めに拾っても誤検知は増えない。
+- ファイル形式は独自のタブ区切りテキスト。JSON にすると fcl-json 依存が増え、Windows CI のユニット検索パス問題を再燃させるリスクがあるため採用しなかった（`SysUtils` だけで読める形式にした）。
+- ランタイムでのデータファイル探索順（`src/FPCSymbols.pas`）: 環境変数 `RAWPACO_DATA_DIR` → `<exeのディレクトリ>/data/` → `<exeのディレクトリ>/../data/`（開発時の `src/rawpaco` に対するリポジトリ直下 `data/`）→ `./data/`。見つからない場合、依存ルールは黙って何も報告しない（CLAUDE.mdルール5）。
+- FPC のバージョンを上げる際は、このファイルを再生成し、deprecated 一覧の差分を確認すること。
 
 ## 自己lint到達状況
 
