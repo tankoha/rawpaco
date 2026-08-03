@@ -12,6 +12,7 @@
 | RAWPACO-DEPR-001 | 自己矛盾する非推奨API使用(同一ファイル内)検知 | 実装済み | `src/Rules/RuleDepr001.pas`。設計書P4。positive 3件/negative 2件。`deprecated`属性付き`declProc`の名前を集め、同一ファイル内の`exprCall`(括弧付き呼び出し)・裸の識別子文(括弧なし呼び出し)と照合。`Obj.Method`のようなクラスメソッド呼び出しは対象外 |
 | RAWPACO-DEPR-002 | FPC RTL/FCLの`deprecated`シンボル使用検知 | 実装済み | `src/Rules/RuleDepr002.pas`。設計書P6。positive 5件/negative 3件。`data/fpc-rtl-symbols.txt`(静的データ)を`src/FPCSymbols.pas`が読む。検知対象は「ユニットレベルで公開されているdeprecatedシンボル」29件(`SysUtils.DecimalSeparator`等の書式グローバル変数群、`SysUtils.GetTickCount`等)。fpc-source全体(4894ファイル)で誤検知ゼロを実測 |
 | RAWPACO-HALLUC-001 | FPC RTL/FCLに実在しない識別子(hallucination)検知 | 実装済み | `src/Rules/RuleHalluc001.pas`。設計書P7。positive 4件/negative 3件。DEPR-002とデータを共有。判定A=ユニット修飾された参照(`Math.Clamp`等)、判定B=修飾なし呼び出し(usesが全て既知ユニットの場合のみ)。fpc-source全体(4894ファイル)で誤検知ゼロを実測 |
+| RAWPACO-STYLE-001 | 命名規則チェック(設定ファイルベース) | 実装済み | `src/Rules/RuleStyle001.pas` + `src/RawpacoConfig.pas`。設計書P5。positive 3件/negative 3件 + `tests/config/`の設定4ケース。設定は`rawpaco.json`(JSON/fcl-json)。既定は型名`T`(例外クラス`E`も許可)・インターフェース`I`・ポインタ型`P`・classのprivate/protectedフィールド`F`のみ |
 
 ## 見送ったルール（検討済み・意図的に未実装）
 
@@ -26,6 +27,7 @@
 - P4実装時に確認: 手続き・関数宣言は`declProc`(procedure/function/constructor/destructor共通)。括弧付き呼び出し`Foo()`は`exprCall`(フィールド`entity`)になるが、括弧なし呼び出し`Foo;`(引数なし手続きのPascal的な書き方)は`exprCall`にならず、`statement`ノードが唯一の子として直接`identifier`を持つだけの形になる。両方を見ないと呼び出しを取りこぼす。詳細は`src/Rules/RuleDepr001.pas`冒頭コメント参照。
 - P6実装時に確認: `A.B`は`exprDot`(フィールド`lhs`/`operator`/`rhs`)だが、`procedure TFoo.Bar;`のような実装ヘッダの名前は`exprDot`ではなく**`genericDot`**という別ノード種別になる（宣言名なので使用箇所として数えてはいけない）。`uses`節は`declUses`で各ユニットは`moduleName`ノード。`declVar`/`declField`は`A, B: Integer;`のように`name`フィールドを複数持ちうる。クラス/レコード/オブジェクトはいずれも`declClass`(先頭の子トークンが`kClass`/`kRecord`/`kObject`で区別)、インターフェースは`declIntf`、ヘルパは`declHelper`。可視性は`declSection`配下の`kPrivate`/`kProtected`/`kPublic`/`kPublished`(+`kStrict`)。`class var`はクラス内でも`declVars`/`declVar`になり`declField`にはならない。詳細は`src/Rules/RuleDepr002.pas`冒頭コメント参照。
 - P6実装時の実測知見（誤検知対策）: `with Rec do ... end` の本体では裸の識別子がレコードのフィールドを指すため、型解決なしでは RTL のグローバル変数と区別できない。fpc-source 全体(4894ファイル)に当てたところ、`with FormatSettings do begin DecimalSeparator := '.'; ... end` という典型的（かつ推奨される）書き方が誤検知の最大要因（91件中58件）だった。`with`の`body`フィールド配下は走査しないことで解消し、残り33件は全て真陽性であることを目視確認済み。
+- P5実装時の実測知見: fpc-source 全体(4894ファイル)に既定設定で当てると 25254 件出るが、内訳は `rtl/java/jdk15.pas`(4192件)・`rtl/android/jvm/androidr14.pas`(2408件)・`packages/winunits-*`・`packages/univint` といった **JVM バインディングや C ヘッダの機械的移植**に集中しており、誤検知ではなく本当に Pascal の命名慣習に従っていないコードである。手書きの `fcl-base`/`fcl-json`/`rtl-objpas`/`rtl-generics` に限ると 105 件で、その大半は `fBuffer` のような小文字始まりの非公開フィールド（大文字小文字を区別する設計判断によるもの。`docs/CONFIG.md` に `["F", "f"]` と書く回避策を記載済み）。
 - P5(命名規則)向けの事前調査で確認したノード種別: 型宣言は`declTypes` > `declType`(フィールド`name`/`type`)。`name`は通常`identifier`だが、**ジェネリック型では`genericTpl`**(フィールド`entity`=実際の型名、`args`>`genericArg`>`name`=型引数)になる。`type`側は`declClass`(class/object/recordが全部これ。先頭の子トークン`kClass`/`kObject`/`kRecord`で区別)、`declIntf`(interface)、`declHelper`(class helper/record helper)、`type` > `declEnum`(列挙)、`type` > `typeref` > `typerefPtr`(`^T`のポインタ型)。クラス/レコードのフィールドは`declField`(フィールド`name`は複数持ちうる)、可視性は親の`declSection`の`kPrivate`/`kProtected`/`kPublic`/`kPublished`(+`kStrict`)。`class var`は`declVars`/`declVar`になる。
 - P7実装時に確認: `root`の直下は`unit`/`program`/`library`のいずれか、または（`{$i}`で他ファイルに取り込まれる前提の断片の場合）`declTypes`/`declVars`等が直接並ぶ形になる。`inherited Go;`は`exprCall`ではなく`inherited`ノード(`kInherited` + `identifier`)。`ts_node_has_error`(api.h 533行目)で構文エラーの有無を判定できる。
 - P7実装時の実測知見（誤検知対策）: fpc-source全体に当てた初版で190件の誤検知が出た。内訳と対処は (1) 175件が`{$MACRO ON}` + `{$define Rsc := }`によるマクロ展開（tree-sitterは展開しないので消える識別子を「実在しない」と誤認）→ `{$MACRO`を含むファイルでは判定Bを無効化、(2) `uses`が1つも無いファイル（`{$i}`で組み立てられるRTL内部ユニットやinclude断片）→ 「usesが1つ以上あり全て既知」を判定Bの前提条件に、(3) `AssignFile`/`CloseFile`が見つからない → これらは`system`ではなく`objpas`ユニット（objfpc/delphiモードで暗黙にuses）にあるため、`objpas`をデータ生成対象に追加。対処後は誤検知ゼロ。
@@ -44,7 +46,7 @@
 
 ## 自己lint到達状況
 
-- 本ツール自身のソースへの自己適用: `./src/rawpaco src/*.pas src/Rules/*.pas src/rawpaco.lpr` をローカルで実行し、誤検知・真陽性ともにゼロを確認済み（2026-08-04時点、RAWPACO-DEFENSE-001・RAWPACO-SEC-001・RAWPACO-SEC-002・RAWPACO-DEPR-001・RAWPACO-DEPR-002・RAWPACO-HALLUC-001の6ルール）。
+- 本ツール自身のソースへの自己適用: `./src/rawpaco src/*.pas src/Rules/*.pas src/rawpaco.lpr` をローカルで実行し、誤検知・真陽性ともにゼロを確認済み（2026-08-04時点、RAWPACO-DEFENSE-001・RAWPACO-SEC-001・RAWPACO-SEC-002・RAWPACO-DEPR-001・RAWPACO-DEPR-002・RAWPACO-HALLUC-001・RAWPACO-STYLE-001の7ルール）。
 - CIへの自己lintステップ追加: 未実施（ルールが1つしかなく、`--only`/`--exclude`によるルール個別スコープ導入の効果がまだ薄いため見送り。ルールが増えてきたら`docs/RULE_ENGINE_DESIGN.md`5節の手順で段階導入する）。
 
 ## tree-sitter本体・tree-sitter-pascalのvendoring方針（確定）
@@ -95,10 +97,16 @@
 - 2回目の失敗（run 30815734423）: `rtl-generics`ディレクトリだけを個別に`-Fu`で足したところ、今度は依存先の`Fatal: Can't find unit Variants used by Generics.Defaults`が発覚。パッケージ単位で1つずつ`-Fu`を足す芋づる式のホワックアモグラは非効率と判断し、Linuxのfpc.cfgと同じ`-Fu<dir>/*`ワイルドカード方式に切り替えた。`rtl-generics`ディレクトリの親(`units\i386-win32`、fpctarget相当)を検出し、`-Fu$FPC_UNITS_ROOT/*`として全パッケージサブディレクトリを一括で検索パスに含めるようにした（`.github/workflows/ci.yml`）。未検証・要フォローアップ。
 - 64bit（`ppcx64.exe`）経路について: 追わない方針で決着。理由は(1)32bitのままで全ての問題が解決したこと、(2)`i_win.pas`の`system_x86_64_win64_info`も`link : ld_int_windows`であり、win64でも既定は同じ内部リンカなので`-Xe`等の同じ対処が結局必要になること、(3)chocoの`freepascal`パッケージでは`ppcx64.exe`が配置されない制約（7回目実行までで確認済み）が残ること。将来どうしても64bitが必要になった場合の候補としては、`choco install lazarus`（win64版Lazarusインストーラはネイティブのwin64 FPC = `ppcx64.exe`を同梱する）や`fpcupdeluxe`/`ollydev/setup-lazarus`系のGitHub Actionがあるが、いずれも未検証。
 
+## 設定ファイル (`rawpaco.json`) について
+
+- スキーマ・探索順・既定値の根拠は `docs/CONFIG.md` を参照。実装は `src/RawpacoConfig.pas`。
+- 形式は **JSON（fcl-json: `fpjson` + `jsonparser`）**。`fcl-json` が Windows CI のユニット検索パスで解決できるかを、ルール本体を作り込む前にコミット `e53201e` の1回で実機確認した（CI run 30859609754、**CI設定の変更なしで Linux/Windows とも成功**）。現行 CI の `-Fu<unitsroot>/*` ワイルドカード方式が効いている。今後 fcl-* の他パッケージを使う場合も同様に通る見込み。
+- CI（Windows）で `choco install freepascal` が SourceForge の 404 で失敗することがある（2026-08-04 に1回発生、再実行で成功）。CI設定の問題ではなく上流の一時的障害なので、失敗時はまず `gh run rerun <id> --failed` を試すこと。
+
 ## 未着手・保留中
 
-- **P5 RAWPACO-STYLE-001（命名規則チェック、設定ファイルベース）**: 未実装。設定ファイルの形式とデフォルト規則の選定はユーザ判断を仰ぐ事項のため、実装前に一旦停止した。調査結果と具体案は本セッションの報告を参照（要点: 形式は依存を増やさない自前パースのINI風、デフォルトは型名 `T`/`E`・インターフェース `I`・ポインタ型 `P`・private/protectedフィールド `F` の高合意サブセットのみ、record/objectのフィールドとpublicフィールドは対象外）。tree-sitter-pascal 側の調査は完了済みで、必要なノード種別は判明している（下記「文法カバレッジ」参照）。
-- CI（Windows）で `choco install freepascal` が SourceForge の 404 で失敗することがある（2026-08-04 に1回発生、再実行で成功）。CI設定の問題ではなく上流の一時的障害なので、失敗時はまず `gh run rerun <id> --failed` を試すこと。
+- 設計書 P8（RAWPACO-DEFENSE-002 生成直後の無意味なnilチェック、担当Sonnet5）、P9（RAWPACO-STYLE-002 エラーハンドリング不統一の近似検知、担当Opus5）が未着手。
+- `--only` / `--exclude` によるルール個別のオンオフは未実装（設計書5節・8節、担当Sonnet5）。`rawpaco.json` にはルール単位の有効・無効を書くキーを**意図的に設けていない**。ルールのオンオフはルールエンジン側（RuleRegistry のディスパッチ）の仕組みであって命名規則の設定とは層が違うため、`--only`/`--exclude` を実装する際に設定ファイル側のキーもあわせて設計するのがよい。
 
 ## 直近セッションのメモ
 

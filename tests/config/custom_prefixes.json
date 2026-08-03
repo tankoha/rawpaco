@@ -1,0 +1,11 @@
+{
+  "naming": {
+    "class": ["C"],
+    "object": false,
+    "record": null,
+    "interface": "Intf",
+    "enum": ["Enum"],
+    "pointer": ["Ptr"],
+    "privateField": ["m_"]
+  }
+}
