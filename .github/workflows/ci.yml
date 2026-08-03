@@ -97,9 +97,10 @@ jobs:
 
           inspect() {
             echo "--- ls:"; ls -l src/rawpaco.exe
-            echo "--- objdump -f:"; objdump -f src/rawpaco.exe | head -12
-            echo "--- run via bash:"; ./src/rawpaco.exe; echo "bash exit=$?"
-            echo "--- run via cmd:"; cmd //c "src\\rawpaco.exe"; echo "cmd exit=$?"
+            echo "--- objdump -f:"; objdump -f src/rawpaco.exe 2>&1 | head -12
+            echo "--- objdump -h:"; objdump -h src/rawpaco.exe 2>&1 | head -30
+            echo "--- head bytes:"; od -A d -t x1 -N 64 src/rawpaco.exe
+            echo "--- run:"; timeout 30 ./src/rawpaco.exe < /dev/null; echo "exit=$?"
           }
 
           attempt() {
