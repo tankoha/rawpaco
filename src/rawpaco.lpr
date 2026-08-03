@@ -24,8 +24,9 @@ begin
     // 引数なし: 既存の自己チェック(tree-sitter-pascalが正しくリンク・
     // 動作することの確認)。CIの`./src/rawpaco`(Linux)/`./src/rawpaco.exe`
     // (Windows)という引数なし呼び出しが無改修で動き続けるよう、この
-    // ブロックの内容は変更しない。
-    WriteLn('status: bootstrap, no lint rules implemented yet');
+    // ブロックの制御フロー・終了コードは変更しない(WriteLnの文言のみ
+    // 実態に合わせて更新可能)。
+    WriteLn('status: bootstrap self-check (lint rules are implemented; run with file arguments to lint)');
     Parser := ts_parser_new;
     try
       if not ts_parser_set_language(Parser, tree_sitter_pascal) then
