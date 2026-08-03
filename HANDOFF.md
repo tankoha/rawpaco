@@ -20,6 +20,7 @@
 
 - 本ツール自身のソースへの自己適用: 未実施
 - 鶏卵問題の解消範囲: N/A（lintルールが1つも存在しないため、CIへの自己lintステップ追加は次回以降に見送り。CLAUDE.mdルール4は最初のルール実装後に着手）
+- 鶏卵問題の解消手順は `docs/RULE_ENGINE_DESIGN.md` の「自己lint組み込みへの道筋」に設計済み。次にルールを実装する際はそちらを参照。
 
 ## tree-sitter本体・tree-sitter-pascalのvendoring方針（確定）
 
@@ -72,7 +73,8 @@
 - FPC開発環境をローカルに導入済み（Ubuntu 24.04、apt経由: fpc 3.2.2+dfsg-32, fpc-source, lazarus 3.0）。
 - tree-sitter本体・tree-sitter-pascalのvendoring、Makefileによるビルド、`src/rawpaco.lpr` からのtree-sitter-pascal経由パース（自己チェック用の最小プログラム）まで動作確認済み（Linux）。詳細は上記セクション参照。
 - `.github/workflows/ci.yml` を追加（Linux/Windowsの2ジョブ）。LinuxはCI相当のローカル手順（apt install fpc → make → 実行）を確認済み。Windows側も実機CIでビルド＋自己チェック実行まで成功を確認済み（上記参照）。
-- 次のステップ: Windows CIジョブの実機検証、実際のlintルール第1号の実装（positive/negativeサンプル込み、CLAUDE.mdルール3）、ルール実装後に自己lintのCI組み込み（ルール4）。
+- ルールエンジン全体の設計を `docs/RULE_ENGINE_DESIGN.md` にまとめた（API設計、AI生成コード特有の5問題点ごとの検知可否、サンプル配置、出力形式、自己lintへの道筋、実装優先順位付き第1弾ルール案、実装担当（Sonnet5/Opus5）の振り分けを含む）。
+- 次のステップ: Windows CIジョブの実機検証、上記設計書の優先順位に従った実際のlintルール第1号の実装（positive/negativeサンプル込み、CLAUDE.mdルール3）、ルール実装後に自己lintのCI組み込み（ルール4）。
 
 ## 関連プロジェクト（参考・棚卸し対象外）
 

@@ -6,9 +6,11 @@
 
 ## 開発ルール
 
-### 1. FPC RTL関数使用時の検証ルール
+### 1. FPC RTL関数・外部Cライブラリ使用時の検証ルール
 
 使用頻度の低い RTL 関数・プラットフォーム固有 API を使う場合は、実装前に freepascal.org のドキュメントで存在を確認すること。確認できない場合は、コード内コメントまたは HANDOFF.md にその旨を明記し、コンパイルが成功することのみをもって正しさの根拠としない。
+
+tree-sitter など cdecl 外部宣言で直接呼び出す C ライブラリの関数シグネチャについても同様に扱う。この場合の照合先は freepascal.org ではなく `vendor/` 配下にvendoringした当該ライブラリ自身のヘッダ（例: `vendor/tree-sitter/include/tree_sitter/api.h`）とする。`src/TSBindings.pas` の既存コメントは本ルールの適用対象であることを前提に書かれているため、ここに明記して整合させた。
 
 ### 2. tree-sitter-pascal のバージョン固定方針
 
