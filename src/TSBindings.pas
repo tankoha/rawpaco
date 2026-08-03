@@ -29,34 +29,30 @@ unit TSBindings;
 // しているmingw(niXman mingw-builds 16.1.0)はucrtランタイムなので
 // crtは`ucrt`を指定する。
 //
-// これらを一通り並べてもatexitだけがUndefined symbolとして最後まで残った。
-// nmで全.aファイルを直接調べたところ、pinしているmingw-w64(niXman
-// mingw-builds 16.1.0, UCRT)はどのインポートライブラリにもプレーンな
-// `atexit`シンボルを公開していないと判明（UCRT環境では<stdlib.h>の
-// インライン展開経由でのみ提供され、実体は`_crt_atexit`。詳細はHANDOFF.md
-// 参照）。Cのシム(.o)を{$L}で埋め込む方式、Pascal側で`_crt_atexit`へ
-// 転送する関数を`public name '_atexit'`でエクスポートする方式もいずれも
-// ppc386.exe自体がEAccessViolationでクラッシュした（先頭アンダースコアの
-// シンボルをFPCが書き出す/読み込む処理に何らかのバグがある模様。詳細は
-// HANDOFF.md参照）。FPCに新規シンボルを一切書き出させず、CI
-// (.github/workflows/ci.yml)側でリンカの`--defsym`機能により`_atexit`を
-// 既存の`__crt_atexit`のエイリアスとして解決する方式に変更した。
+// mingwex/mingw32/gcc は互いに依存し合う循環参照になっており、GNU ldの
+// 左→右1回走査では解決しきれない。`--start-group`/`--end-group`は使えない
+// （FPCは-Flで与えた検索パスをldのコマンドラインではなくリンカスクリプトの
+// SEARCH_DIRとして渡すため、-k経由で足した`-lxxx`はライブラリを見つけられない）
+// ので、この3つを後ろにもう一度並べる古典的な2周回避策を採る。
+//
+// atexitについて: pinしているmingw-w64(niXman mingw-builds 16.1.0, UCRT)は
+// どのインポートライブラリにもプレーンな`atexit`シンボルを公開していない
+// （UCRT環境では<stdlib.h>のインライン展開経由でのみ提供され、実体は
+// `_crt_atexit`）。それを参照しているのはlibmingwex.a(misc.o)とlibmingw32.a
+// (gccmain.o)であり、vendorのCソース自体はatexitを使っていない。転送用の
+// シム(src/win32_atexit_shim.c)をCI側でコンパイルし`-k`でldに直接渡して
+// 解決する。`{$L}`で埋め込む方式はFPCの内部リンカをクラッシュさせるため
+// 使えない（詳細はHANDOFF.md参照）。
 {$IFDEF MSWINDOWS}
 {$linklib mingwex}
-{$IFNDEF EXP_NO_MINGW32}
 {$linklib mingw32}
-{$ENDIF}
 {$linklib gcc}
 {$linklib ucrt}
 {$linklib kernel32}
 {$linklib winpthread}
-{$IFNDEF EXP_NO_DUP}
 {$linklib mingwex}
-{$IFNDEF EXP_NO_MINGW32}
 {$linklib mingw32}
-{$ENDIF}
 {$linklib gcc}
-{$ENDIF}
 {$ENDIF}
 {$L ../build/tree-sitter.o}
 {$L ../build/tree-sitter-pascal.o}

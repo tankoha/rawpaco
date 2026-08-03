@@ -42,6 +42,11 @@ jobs:
       # 追いかけるのを諦め、確実に存在する32bit版(ppc386.exe)にgcc側を
       # 合わせる。--x86 で mingw パッケージにも32bit(i686)ビルドを
       # ダウンロードさせる。
+      #
+      # なお、その後判明した残課題(内部リンカのクラッシュ等)は32bit固有の
+      # 問題ではなく、FPC 3.2.2ではwin64も既定で同じ内部リンカを使うため、
+      # 64bitに移行しても同じ対処(-Xe等)が必要になる見込みである。
+      # 32bitのままで全て解決済みなので64bit化は追わない。
       - name: Install FPC and MinGW (gcc)
         shell: pwsh
         run: |
@@ -67,6 +72,9 @@ jobs:
           if (-not $libDirs) { throw "no mingw runtime import libraries (libmingwex.a etc.) found under $mingwRoot" }
           Add-Content -Path $env:GITHUB_ENV -Value "MINGW_LIB_DIRS=$($libDirs -join ';')"
 
+      # win32_atexit_shim.c は Windows でのみ必要。UCRT版mingw-w64が
+      # プレーンな`atexit`シンボルをどのライブラリにも持たないことへの対処
+      # （理由は src/TSBindings.pas と HANDOFF.md を参照）。
       - name: Build vendor objects
         shell: bash
         run: |
@@ -75,53 +83,42 @@ jobs:
           gcc -c vendor/tree-sitter-pascal/src/parser.c -I vendor/tree-sitter-pascal/src -I vendor/tree-sitter/include -o build/tree-sitter-pascal.o
           gcc -c src/win32_atexit_shim.c -o build/win32_atexit_shim.o
 
-      - name: Build rawpaco (linker experiment matrix)
+      # fpc に渡す各オプションの理由（いずれもWindows CIの実機検証で確定。
+      # 経緯の詳細は HANDOFF.md 参照）:
+      #
+      #   -Xe   FPCのwin32ターゲットは既定で内部リンカ(ld_int_windows)を使うが、
+      #         3.2.2の内部リンカは本プロジェクトのリンクを最後まで通すと
+      #         EAccessViolationでコンパイラごとクラッシュする。外部のld.exe
+      #         (chocoのfreepascalに同梱)に切り替えると解消する。あわせて、
+      #         内部リンカが無視していた -k オプションが有効になる。
+      #
+      #   -k<obj>  atexitシムのオブジェクトをldへ直接渡す。{$L}で埋め込むと
+      #         FPC自身がCOFFを解析する経路に入りクラッシュするため使えない。
+      #
+      #   -k--allow-multiple-definition
+      #         FPCのsysinitpas.oとmingwのlibmingw32.a(tlssup.o)が双方
+      #         `_tls_used`(TLSディレクトリ)を定義するため。先に現れる
+      #         FPC側の定義が採用される。tlssup.o自体は`.tls`セクションと
+      #         `___tls_start__`/`___tls_end__`の供給源としてFPC側から必要
+      #         とされるので、アーカイブから取り除く方法は使えない
+      #         （試したところ「defined in discarded section `.tls'」で失敗）。
+      #
+      #   -k--strip-debug
+      #         mingwのランタイムオブジェクトがDWARF5デバッグ情報を持ち込み、
+      #         VMA 0 の .debug_* セクションがPEセクションテーブルに残る。
+      #         この状態のexeはWindowsローダに拒否され、起動しようとすると
+      #         ENOEXEC(「Exec format error」)になる。デバッグ情報を落とすと
+      #         正常に起動する。
+      - name: Build rawpaco
         shell: bash
         run: |
-          set +e
           FL_ARGS=()
           IFS=';' read -ra DIRS <<< "$MINGW_LIB_DIRS"
           for d in "${DIRS[@]}"; do
             FL_ARGS+=("-Fl$d")
           done
+          fpc -Xe -kbuild/win32_atexit_shim.o -k--allow-multiple-definition -k--strip-debug "${FL_ARGS[@]}" src/rawpaco.lpr
 
-          # tlssup.o を取り除いた libmingw32.a を用意する（_tls_used の重複定義を
-          # --allow-multiple-definition で握り潰すのではなく、根本から避ける案）
-          mkdir -p build/lib
-          for d in "${DIRS[@]}"; do
-            if [ -f "$d/libmingw32.a" ]; then cp "$d/libmingw32.a" build/lib/; fi
-          done
-          ar t build/lib/libmingw32.a | grep -i tlssup
-          ar d build/lib/libmingw32.a "$(ar t build/lib/libmingw32.a | grep -i tlssup)"
-          echo "after ar d:"; ar t build/lib/libmingw32.a | grep -i tlssup || echo "(tlssup removed)"
-
-          inspect() {
-            echo "--- ls:"; ls -l src/rawpaco.exe
-            echo "--- objdump -h:"; objdump -h src/rawpaco.exe 2>&1 | head -20
-            echo "--- objdump -p:"; objdump -p src/rawpaco.exe 2>&1 | head -45
-            echo "--- run:"; timeout 30 ./src/rawpaco.exe < /dev/null; echo "exit=$?"
-            echo "--- run after strip:"
-            cp src/rawpaco.exe src/rawpaco_stripped.exe
-            strip src/rawpaco_stripped.exe
-            objdump -h src/rawpaco_stripped.exe 2>&1 | head -12
-            timeout 30 ./src/rawpaco_stripped.exe < /dev/null; echo "exit=$?"
-            rm -f src/rawpaco_stripped.exe
-          }
-
-          attempt() {
-            local name="$1"; shift
-            rm -f src/rawpaco.exe src/*.o src/*.ppu
-            echo "===== ATTEMPT $name : fpc $* ====="
-            fpc "$@" src/rawpaco.lpr 2>&1 | tail -40
-            if [ -f src/rawpaco.exe ]; then
-              echo "----- ATTEMPT $name RESULT: exe produced"
-              inspect
-            else
-              echo "----- ATTEMPT $name RESULT: no exe"
-            fi
-          }
-
-          attempt E-allow-multiple-def -Xe -kbuild/win32_atexit_shim.o -k--allow-multiple-definition "${FL_ARGS[@]}"
-          attempt I-Xs -Xe -kbuild/win32_atexit_shim.o -k--allow-multiple-definition -Xs "${FL_ARGS[@]}"
-          attempt J-strip-debug -Xe -kbuild/win32_atexit_shim.o -k--allow-multiple-definition -k--strip-debug "${FL_ARGS[@]}"
-          exit 0
+      - name: Run bootstrap self-check
+        shell: bash
+        run: ./src/rawpaco.exe
