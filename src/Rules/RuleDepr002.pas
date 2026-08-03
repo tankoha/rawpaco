@@ -66,19 +66,23 @@ type
   TUnitList = specialize TList<string>;
 
 // ファイル内の全ての宣言名（大文字化）を集める。制約2のシャドウイング対策。
+// ジェネリック型 `generic TFoo<T> = class` の名前は `genericTpl` ノードになり
+// identifier ではないため、`genericTpl` 配下の identifier はまとめて拾う。
 procedure CollectDeclaredNames(const Node: TSNode; Ctx: TLintContext; Names: TNameSet);
 var
   ChildCount, I, NamedCount, J: LongWord;
   Child: TSNode;
   FieldName: PAnsiChar;
   Key: string;
+  InGenericTpl: Boolean;
 begin
+  InGenericTpl := (ts_node_type(Node) = 'genericTpl') or (ts_node_type(Node) = 'genericArg');
   ChildCount := ts_node_child_count(Node);
   I := 0;
   while I < ChildCount do
   begin
     FieldName := ts_node_field_name_for_child(Node, I);
-    if (FieldName <> nil) and (FieldName = 'name') then
+    if InGenericTpl or ((FieldName <> nil) and (FieldName = 'name')) then
     begin
       Child := ts_node_child(Node, I);
       if ts_node_type(Child) = 'identifier' then

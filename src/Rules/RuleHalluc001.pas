@@ -88,18 +88,23 @@ type
   end;
 
 // ファイル内の全ての宣言名を集める（親ノードのフィールド名が `name` の identifier）。
+// ジェネリック型 `generic TFoo<T> = class` の名前は `genericTpl` ノードになり
+// identifier ではないため、`genericTpl` 配下の identifier（型名 T含む型引数）は
+// まとめて拾う。多めに拾っても警告を抑制する方向にしか効かない。
 procedure CollectDeclaredNames(const Node: TSNode; Ctx: TLintContext; Names: TNameSet);
 var
   ChildCount, I, NamedCount, J: LongWord;
   Child: TSNode;
   FieldName: PAnsiChar;
+  InGenericTpl: Boolean;
 begin
+  InGenericTpl := (ts_node_type(Node) = 'genericTpl') or (ts_node_type(Node) = 'genericArg');
   ChildCount := ts_node_child_count(Node);
   I := 0;
   while I < ChildCount do
   begin
     FieldName := ts_node_field_name_for_child(Node, I);
-    if (FieldName <> nil) and (FieldName = 'name') then
+    if InGenericTpl or ((FieldName <> nil) and (FieldName = 'name')) then
     begin
       Child := ts_node_child(Node, I);
       if ts_node_type(Child) = 'identifier' then
