@@ -43,14 +43,20 @@ unit TSBindings;
 // 既存の`__crt_atexit`のエイリアスとして解決する方式に変更した。
 {$IFDEF MSWINDOWS}
 {$linklib mingwex}
+{$IFNDEF EXP_NO_MINGW32}
 {$linklib mingw32}
+{$ENDIF}
 {$linklib gcc}
 {$linklib ucrt}
 {$linklib kernel32}
 {$linklib winpthread}
+{$IFNDEF EXP_NO_DUP}
 {$linklib mingwex}
+{$IFNDEF EXP_NO_MINGW32}
 {$linklib mingw32}
+{$ENDIF}
 {$linklib gcc}
+{$ENDIF}
 {$ENDIF}
 {$L ../build/tree-sitter.o}
 {$L ../build/tree-sitter-pascal.o}

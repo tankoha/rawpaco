@@ -75,29 +75,6 @@ jobs:
           gcc -c vendor/tree-sitter-pascal/src/parser.c -I vendor/tree-sitter-pascal/src -I vendor/tree-sitter/include -o build/tree-sitter-pascal.o
           gcc -c src/win32_atexit_shim.c -o build/win32_atexit_shim.o
 
-      - name: Diagnose atexit references
-        shell: bash
-        run: |
-          set +e
-          IFS=';' read -ra DIRS <<< "$MINGW_LIB_DIRS"
-          echo "== who REFERENCES atexit =="
-          for d in "${DIRS[@]}"; do
-            for a in "$d"/*.a; do
-              nm -A --undefined-only "$a" 2>/dev/null | grep -E '(^|[ \t])_atexit$'
-            done
-          done
-          echo "== who DEFINES _crt_atexit =="
-          for d in "${DIRS[@]}"; do
-            for a in "$d"/*.a; do
-              nm -A --defined-only "$a" 2>/dev/null | grep -E '__crt_atexit$'
-            done
-          done
-          echo "== ld availability =="
-          which ld || true
-          ld --version | head -2 || true
-          echo "== done =="
-          exit 0
-
       - name: Build rawpaco (linker experiment matrix)
         shell: bash
         run: |
@@ -120,12 +97,10 @@ jobs:
             fi
           }
 
-          attempt A-internal-baseline "${FL_ARGS[@]}"
-          attempt B-external-linker -Xe "${FL_ARGS[@]}"
-          echo "===== link.res after attempt B ====="
-          cat src/link*.res 2>/dev/null | tail -60
-          attempt C-external-plus-shim -Xe -kbuild/win32_atexit_shim.o "${FL_ARGS[@]}"
+          attempt E-allow-multiple-def -Xe -kbuild/win32_atexit_shim.o -k--allow-multiple-definition "${FL_ARGS[@]}"
           if [ -f src/rawpaco.exe ]; then ./src/rawpaco.exe; echo "selfcheck exit=$?"; fi
-          attempt D-internal-plus-shim -Xi -kbuild/win32_atexit_shim.o "${FL_ARGS[@]}"
+          attempt F-drop-mingw32 -Xe -kbuild/win32_atexit_shim.o -dEXP_NO_MINGW32 "${FL_ARGS[@]}"
+          if [ -f src/rawpaco.exe ]; then ./src/rawpaco.exe; echo "selfcheck exit=$?"; fi
+          attempt G-drop-mingw32-and-dup -Xe -kbuild/win32_atexit_shim.o -dEXP_NO_MINGW32 -dEXP_NO_DUP -k--start-group -k-lmingwex -k-lgcc -k-lucrt -k-lkernel32 -k--end-group "${FL_ARGS[@]}"
           if [ -f src/rawpaco.exe ]; then ./src/rawpaco.exe; echo "selfcheck exit=$?"; fi
           exit 0
