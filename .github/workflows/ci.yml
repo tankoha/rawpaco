@@ -42,6 +42,11 @@ jobs:
       # 追いかけるのを諦め、確実に存在する32bit版(ppc386.exe)にgcc側を
       # 合わせる。--x86 で mingw パッケージにも32bit(i686)ビルドを
       # ダウンロードさせる。
+      #
+      # なお、その後判明した残課題(内部リンカのクラッシュ等)は32bit固有の
+      # 問題ではなく、FPC 3.2.2ではwin64も既定で同じ内部リンカを使うため、
+      # 64bitに移行しても同じ対処(-Xe等)が必要になる見込みである。
+      # 32bitのままで全て解決済みなので64bit化は追わない。
       - name: Install FPC and MinGW (gcc)
         shell: pwsh
         run: |
@@ -67,13 +72,43 @@ jobs:
           if (-not $libDirs) { throw "no mingw runtime import libraries (libmingwex.a etc.) found under $mingwRoot" }
           Add-Content -Path $env:GITHUB_ENV -Value "MINGW_LIB_DIRS=$($libDirs -join ';')"
 
+      # win32_atexit_shim.c は Windows でのみ必要。UCRT版mingw-w64が
+      # プレーンな`atexit`シンボルをどのライブラリにも持たないことへの対処
+      # （理由は src/TSBindings.pas と HANDOFF.md を参照）。
       - name: Build vendor objects
         shell: bash
         run: |
           mkdir -p build
           gcc -c vendor/tree-sitter/src/lib.c -I vendor/tree-sitter/include -I vendor/tree-sitter/src -o build/tree-sitter.o
           gcc -c vendor/tree-sitter-pascal/src/parser.c -I vendor/tree-sitter-pascal/src -I vendor/tree-sitter/include -o build/tree-sitter-pascal.o
+          gcc -c src/win32_atexit_shim.c -o build/win32_atexit_shim.o
 
+      # fpc に渡す各オプションの理由（いずれもWindows CIの実機検証で確定。
+      # 経緯の詳細は HANDOFF.md 参照）:
+      #
+      #   -Xe   FPCのwin32ターゲットは既定で内部リンカ(ld_int_windows)を使うが、
+      #         3.2.2の内部リンカは本プロジェクトのリンクを最後まで通すと
+      #         EAccessViolationでコンパイラごとクラッシュする。外部のld.exe
+      #         (chocoのfreepascalに同梱)に切り替えると解消する。あわせて、
+      #         内部リンカが無視していた -k オプションが有効になる。
+      #
+      #   -k<obj>  atexitシムのオブジェクトをldへ直接渡す。{$L}で埋め込むと
+      #         FPC自身がCOFFを解析する経路に入りクラッシュするため使えない。
+      #
+      #   -k--allow-multiple-definition
+      #         FPCのsysinitpas.oとmingwのlibmingw32.a(tlssup.o)が双方
+      #         `_tls_used`(TLSディレクトリ)を定義するため。先に現れる
+      #         FPC側の定義が採用される。tlssup.o自体は`.tls`セクションと
+      #         `___tls_start__`/`___tls_end__`の供給源としてFPC側から必要
+      #         とされるので、アーカイブから取り除く方法は使えない
+      #         （試したところ「defined in discarded section `.tls'」で失敗）。
+      #
+      #   -k--strip-debug
+      #         mingwのランタイムオブジェクトがDWARF5デバッグ情報を持ち込み、
+      #         VMA 0 の .debug_* セクションがPEセクションテーブルに残る。
+      #         この状態のexeはWindowsローダに拒否され、起動しようとすると
+      #         ENOEXEC(「Exec format error」)になる。デバッグ情報を落とすと
+      #         正常に起動する。
       - name: Build rawpaco
         shell: bash
         run: |
@@ -82,7 +117,7 @@ jobs:
           for d in "${DIRS[@]}"; do
             FL_ARGS+=("-Fl$d")
           done
-          fpc "${FL_ARGS[@]}" src/rawpaco.lpr
+          fpc -Xe -kbuild/win32_atexit_shim.o -k--allow-multiple-definition -k--strip-debug "${FL_ARGS[@]}" src/rawpaco.lpr
 
       - name: Run bootstrap self-check
         shell: bash

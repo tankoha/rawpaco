@@ -47,14 +47,31 @@
 - 対策（第2版）: C側の実装と`{$L}`埋め込みを完全にやめ、`src/win32_atexit_shim.c`は削除。代わりに`TSBindings.pas`のimplementation部で、Pascal側から`_crt_atexit`へ転送する関数を書き`cdecl; public name 'atexit';`でエクスポートする方式に変更（`WindowsAtExitShim`関数）。FPC自身のCOFFリーダーを経由する外部オブジェクトファイルが一切不要になり、クラッシュ要因は解消。
 - Windows CI 13回目実行（run 30764301814）: クラッシュは解消したが、まだ`Undefined symbol: _atexit`が残った（1個のみ、クラッシュなし）。原因は`public name`が明示的な名前をそのまま使うため、win32ターゲットでcdecl関数の名前省略時のみ自動付与される先頭アンダースコアの恩恵を受けなかったこと。エクスポート名を`public name 'atexit'`から`public name '_atexit'`へ変更（アンダースコアを明示）して解決を試みた。
 - Windows CI 14回目実行（run 30764487825）: `public name '_atexit'`にした途端、run 12（Cシムを`{$L}`で埋め込んだ時）と全く同じクラッシュアドレス（$005BBF37等）でEAccessViolationが再発。{$L}によるオブジェクト読み込みとpublic nameによるシンボル書き出しという別々の操作が同一のクラッシュ箇所に落ちることから、FPC(ppc386.exe 3.2.2)が先頭アンダースコア始まりのシンボル名（`_atexit`）を内部処理する経路に何らかのバグ（もしくは予約語的な特別扱いとの衝突）がある可能性が高いと推測。
-- 現状（本セッション時点、未コミット）: `TSBindings.pas`から`public name`によるatexitエクスポートを一旦削除し作業ツリーに留めている（コミットはしていない。Linux側のビルド動作は確認済み）。次の一手として、FPCに新規シンボルを一切書き出させず、CI側でリンカの`ld --defsym _atexit=__crt_atexit`機能により既存の`__crt_atexit`のエイリアスとして解決する方式を検討していたが未着手。ただし9回目実行で`-k`経由のオプション（`--start-group`等）が全く効かなかった前例があり（28個の未解決シンボルが復活）、`-k`の正しい構文自体を先に検証する必要がある（`fpc -h`等でのオプション仕様確認が次のステップ）。
-- 64bitクロスコンパイラ経路について: 7回目実行までで断念済み（`ppcx64.exe`が実際には配置されないchocoパッケージの制約、詳細は上記参照）。今回のatexit問題は32bit(`ppc386.exe`)固有の内部バグの可能性があり、64bit(`ppcx64.exe`)側であれば同じバグを踏まない可能性はあるが、64bit側のFPC自体をこのCI環境で確実に用意する方法が未解決のままである点に留意。
+- **真因の特定（15〜18回目実行、ブランチ`windows-ci-linker`）**: 「ppc386.exeのEAccessViolation」も「`-k`が効かない」も、**FPC 3.2.2のwin32ターゲットが既定で内部リンカ(`ld_int_windows`)を使う**ことが共通の原因だった。`compiler/systems/i_win.pas`の`system_i386_win32_info`は`link : ld_int_windows; linkextern : ld_windows;`となっており、`-Xe`を付けない限り外部の`ld.exe`は使われない。
+  - `-k`が無効だった件（9回目実行の謎）: 内部リンカは`-k`で渡したオプションを一切見ないため。`-Xe`を付けると`-k`は期待どおりldに届く。
+  - EAccessViolationの件: `{$L}`でのオブジェクト読み込みと`public name '_atexit'`でのシンボル書き出しという別経路が同じアドレスでクラッシュしたのは、**どちらも「未定義シンボルが全て解決してリンクが最終段階まで進んだ」ケースだった**ため。先頭アンダースコアは無関係で、内部リンカがこのプロジェクトのイメージを書き出す段階でクラッシュしていた。`public name 'atexit'`（アンダースコアなし）でクラッシュしなかったのは、未定義シンボルで手前で停止していたから。`-Xe`で外部ldに切り替えるとクラッシュしない。
+- 15回目実行（run 30771314121, 診断マトリクス）:
+  - `nm -A --undefined-only`で判明: `atexit`を参照しているのは`libmingwex.a(misc.o)`と`libmingw32.a(gccmain.o)`。**vendorのCソース自身はatexitを一切使っていない**（`grep`でも確認）。
+  - 内部リンカ（従来どおり）: `Undefined symbol: _atexit`のまま。`-Xi -kシム.o`でも同じ（＝内部リンカは`-k`を無視）。
+  - `-Xe`（外部ld）: クラッシュせず、ldからの通常のエラーになった。残ったのは2件 — `undefined reference to 'atexit'` と `multiple definition of '_tls_used'`。
+  - `-Xe -kbuild/win32_atexit_shim.o`: atexitは解決。`_tls_used`のみ残る。
+- 16回目実行（run 30805120637）:
+  - `-k--allow-multiple-definition`を追加 → **リンク成功、exeが生成された**。ただし実行すると`Exec format error`(ENOEXEC, exit 126)。
+  - `libmingw32.a`から`tlssup.o`を`ar d`で除去する案は失敗。FPCの`sysinitpas.o`が`___tls_start__`/`___tls_end__`を参照しており、`.tls`セクションの供給源としてtlssup.oが必要（「defined in discarded section `.tls'」）。よって`--allow-multiple-definition`で先勝ち（FPC側の定義が採用される）にするのが正解。
+  - `-k-lmingwex`のような`-l`を`-k`で渡す方式は使えないと判明（`cannot find -lmingwex`）。FPCは`-Fl`で与えた検索パスをldのコマンドラインではなくリンカスクリプトの`SEARCH_DIR`として渡すため、コマンドライン側の`-l`からは見えない。したがって`--start-group`/`--end-group`は事実上使えず、`{$linklib}`を2周並べる回避策を維持する。
+- 17〜18回目実行（run 30806453652 / 30806733089）: `Exec format error`の原因はPEの構造。`objdump -h`で見ると、mingwのランタイムオブジェクトが持ち込んだDWARF5のデバッグ情報が`.debug_loclists`/`.debug_line_str`/`.debug_rnglists`として**VMA 0のまま`.text`より前のセクションとしてPEセクションテーブルに残っており**、Windowsローダがイメージを拒否していた。`-Xs`（FPCのstrip）でも`-k--strip-debug`（ld側）でも解消し、いずれも生成されたexeが正常に起動して自己チェック出力を出すことを確認した。より限定的な`-k--strip-debug`（シンボルテーブルは残す）を採用。
+- **確定した Windows CI のビルドコマンド**:
+  ```
+  fpc -Xe -kbuild/win32_atexit_shim.o -k--allow-multiple-definition -k--strip-debug <-Fl...> src/rawpaco.lpr
+  ```
+  `src/win32_atexit_shim.c`（`atexit` → `_crt_atexit` への転送、Windows専用）はCI側で`gcc -c`し、`{$L}`ではなく`-k`でldに直接渡す。`{$L}`はFPC自身がCOFFを解析する経路に入るため使わない。
+- 64bit（`ppcx64.exe`）経路について: 追わない方針で決着。理由は(1)32bitのままで全ての問題が解決したこと、(2)`i_win.pas`の`system_x86_64_win64_info`も`link : ld_int_windows`であり、win64でも既定は同じ内部リンカなので`-Xe`等の同じ対処が結局必要になること、(3)chocoの`freepascal`パッケージでは`ppcx64.exe`が配置されない制約（7回目実行までで確認済み）が残ること。将来どうしても64bitが必要になった場合の候補としては、`choco install lazarus`（win64版Lazarusインストーラはネイティブのwin64 FPC = `ppcx64.exe`を同梱する）や`fpcupdeluxe`/`ollydev/setup-lazarus`系のGitHub Actionがあるが、いずれも未検証。
 
 ## 直近セッションのメモ
 
 - FPC開発環境をローカルに導入済み（Ubuntu 24.04、apt経由: fpc 3.2.2+dfsg-32, fpc-source, lazarus 3.0）。
 - tree-sitter本体・tree-sitter-pascalのvendoring、Makefileによるビルド、`src/rawpaco.lpr` からのtree-sitter-pascal経由パース（自己チェック用の最小プログラム）まで動作確認済み（Linux）。詳細は上記セクション参照。
-- `.github/workflows/ci.yml` を追加（Linux/Windowsの2ジョブ）。LinuxはCI相当のローカル手順（apt install fpc → make → 実行）を確認済み。Windows側は未検証（上記参照）。
+- `.github/workflows/ci.yml` を追加（Linux/Windowsの2ジョブ）。LinuxはCI相当のローカル手順（apt install fpc → make → 実行）を確認済み。Windows側も実機CIでビルド＋自己チェック実行まで成功を確認済み（上記参照）。
 - 次のステップ: Windows CIジョブの実機検証、実際のlintルール第1号の実装（positive/negativeサンプル込み、CLAUDE.mdルール3）、ルール実装後に自己lintのCI組み込み（ルール4）。
 
 ## 関連プロジェクト（参考・棚卸し対象外）
