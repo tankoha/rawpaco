@@ -9,6 +9,7 @@
 | RAWPACO-DEFENSE-001 | 空のexceptハンドラ(例外の握りつぶし)検知 | 実装済み | `src/Rules/RuleDefense001.pas`。設計書P1。positive 3件/negative 4件、`make test`で検証 |
 | RAWPACO-SEC-001 | SQL文字列連結(SQLインジェクションの疑い)検知 | 実装済み | `src/Rules/RuleSec001.pas`。設計書P2。positive 3件/negative 2件。片方だけがSQLキーワードを含むliteralStringで、もう片方が非リテラルの場合のみ検知(両方リテラル/両方非リテラルは対象外) |
 | RAWPACO-SEC-002 | シークレットらしき文字列のハードコード検知 | 実装済み | `src/Rules/RuleSec002.pas`。設計書P3。positive 4件/negative 3件。`identifier := literalString`の単純代入と`declVar`/`declConst`の初期値付き宣言が対象。識別子名は接尾辞一致(単純部分一致だと`TokenList`等を誤検知するため)、値はプレースホルダらしき部分一致で除外 |
+| RAWPACO-DEPR-001 | 自己矛盾する非推奨API使用(同一ファイル内)検知 | 実装済み | `src/Rules/RuleDepr001.pas`。設計書P4。positive 3件/negative 2件。`deprecated`属性付き`declProc`の名前を集め、同一ファイル内の`exprCall`(括弧付き呼び出し)・裸の識別子文(括弧なし呼び出し)と照合。`Obj.Method`のようなクラスメソッド呼び出しは対象外 |
 
 ## 見送ったルール（検討済み・意図的に未実装）
 
@@ -20,10 +21,12 @@
 - P2実装時に確認: 二項式は`exprBinary`(フィールドlhs/operator/rhs)、`+`演算子はoperatorフィールドの子`kAdd`(無名の`'+'`トークンではない)。文字列リテラルは`literalString`で、`ts_node_start_byte`/`end_byte`で切り出したテキストは前後の引用符を含む(値だけを返すフィールドは無い)。詳細は`src/Rules/RuleSec001.pas`冒頭コメント参照。
 - P3実装時に確認: `declVar`/`declConst`の`defaultValue`フィールドの中身(`defaultValue`ノード)自体はフィールドを持たず、`kEq`トークンと初期値式が位置的に並ぶだけ。フィールド名検索ではなく「`kEq`以外の子」を位置的に拾う必要がある。手続き引数の`var`宣言は`declVar`ではなく別ノード種別`declArg`。詳細は`src/Rules/RuleSec002.pas`冒頭コメント参照。
 - RAWPACO-SEC-002の既知のスコープ外(次の拡張候補): `Obj.Password := 'x'`のような`exprDot`経由のプロパティ・フィールド代入は検知しない。実務では単純な`identifier := literalString`より一般的な可能性すらあるパターンだが、末端の識別子名を取り出すロジックが別途必要で第一段のスコープを超えるため見送った。
+- P4実装時に確認: 手続き・関数宣言は`declProc`(procedure/function/constructor/destructor共通)。括弧付き呼び出し`Foo()`は`exprCall`(フィールド`entity`)になるが、括弧なし呼び出し`Foo;`(引数なし手続きのPascal的な書き方)は`exprCall`にならず、`statement`ノードが唯一の子として直接`identifier`を持つだけの形になる。両方を見ないと呼び出しを取りこぼす。詳細は`src/Rules/RuleDepr001.pas`冒頭コメント参照。
+- P4実装時の設計判断: `RuleRegistry`に登録されるルールインスタンスは`initialization`で一度だけ生成され、`RunLint`が複数ファイルを処理する間ずっと使い回される。RAWPACO-DEPR-001は「ファイル内でdeprecated宣言を集めてから使用箇所を照合する」という2パス処理(ファイル単位の一時的な状態)が必要だが、インスタンスフィールドに状態を持たせるとファイルをまたいで漏れる。これを避けるため`InterestedNodeTypes`を最上位の`root`ノードのみとし、1ファイルにつき1回のCheck呼び出しの中でローカル変数を使って自己完結した探索を行う設計とした(ASTWalker等の共通インフラは無改修)。複数ファイルを1回の実行で渡し、片方だけにdeprecated宣言がある状態で状態漏れがないことを実装時に確認済み。
 
 ## 自己lint到達状況
 
-- 本ツール自身のソースへの自己適用: `./src/rawpaco src/*.pas src/Rules/*.pas` をローカルで実行し、誤検知・真陽性ともにゼロを確認済み（2026-08-04時点、RAWPACO-DEFENSE-001・RAWPACO-SEC-001・RAWPACO-SEC-002の3ルール）。
+- 本ツール自身のソースへの自己適用: `./src/rawpaco src/*.pas src/Rules/*.pas` をローカルで実行し、誤検知・真陽性ともにゼロを確認済み（2026-08-04時点、RAWPACO-DEFENSE-001・RAWPACO-SEC-001・RAWPACO-SEC-002・RAWPACO-DEPR-001の4ルール）。
 - CIへの自己lintステップ追加: 未実施（ルールが1つしかなく、`--only`/`--exclude`によるルール個別スコープ導入の効果がまだ薄いため見送り。ルールが増えてきたら`docs/RULE_ENGINE_DESIGN.md`5節の手順で段階導入する）。
 
 ## tree-sitter本体・tree-sitter-pascalのvendoring方針（確定）
