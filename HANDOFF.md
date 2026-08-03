@@ -65,6 +65,7 @@
   fpc -Xe -kbuild/win32_atexit_shim.o -k--allow-multiple-definition -k--strip-debug <-Fl...> src/rawpaco.lpr
   ```
   `src/win32_atexit_shim.c`（`atexit` → `_crt_atexit` への転送、Windows専用）はCI側で`gcc -c`し、`{$L}`ではなく`-k`でldに直接渡す。`{$L}`はFPC自身がCOFFを解析する経路に入るため使わない。
+- RAWPACO-DEFENSE-001実装時のWindows CI失敗（run 30815112925）: `src/Diagnostics.pas`が`uses Generics.Collections`した途端、`Fatal: Can't find unit Generics.Collections`。Linux(apt版)の`/etc/fpc.cfg`は`-Fu.../units/$fpctarget/*`というワイルドカードでrtl-genericsパッケージ配下も自動的に検索パスへ含めているが、choco版freepascalのfpc.cfgは同様になっていないと推測される。対策として、mingwライブラリの探索と同じ要領で`generics.collections.ppu`/`.pas`の実際の設置場所をCI側で動的検索し、`-Fu`で明示的に検索パスへ追加した（`.github/workflows/ci.yml`の`Install FPC and MinGW`ステップに`FPC_GENERICS_DIR`として追加、`Build rawpaco`ステップで`-Fu$FPC_GENERICS_DIR`を渡す）。未検証・要フォローアップ。
 - 64bit（`ppcx64.exe`）経路について: 追わない方針で決着。理由は(1)32bitのままで全ての問題が解決したこと、(2)`i_win.pas`の`system_x86_64_win64_info`も`link : ld_int_windows`であり、win64でも既定は同じ内部リンカなので`-Xe`等の同じ対処が結局必要になること、(3)chocoの`freepascal`パッケージでは`ppcx64.exe`が配置されない制約（7回目実行までで確認済み）が残ること。将来どうしても64bitが必要になった場合の候補としては、`choco install lazarus`（win64版Lazarusインストーラはネイティブのwin64 FPC = `ppcx64.exe`を同梱する）や`fpcupdeluxe`/`ollydev/setup-lazarus`系のGitHub Actionがあるが、いずれも未検証。
 
 ## 直近セッションのメモ

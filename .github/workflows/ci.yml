@@ -75,6 +75,17 @@ jobs:
           if (-not $libDirs) { throw "no mingw runtime import libraries (libmingwex.a etc.) found under $mingwRoot" }
           Add-Content -Path $env:GITHUB_ENV -Value "MINGW_LIB_DIRS=$($libDirs -join ';')"
 
+          # choco版freepascalのデフォルトのユニット検索パスには、rtl-generics
+          # パッケージ(Generics.Collections等)のディレクトリが含まれていない
+          # 模様（"Fatal: Can't find unit Generics.Collections" で判明。
+          # Linux(apt版)のfpc.cfgはunits/$fpctarget/*というワイルドカードで
+          # 全パッケージサブディレクトリを自動的に検索パスに含めているが、
+          # choco版のfpc.cfgは同様になっていないと推測される）。実際の設置
+          # 場所を検索し、-Fu（ユニット検索パス）として後続ステップに渡す。
+          $genericsUnit = Get-ChildItem -Path 'C:\tools\freepascal' -Include 'generics.collections.ppu','generics.collections.pas' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $genericsUnit) { throw "generics.collections.ppu/.pas not found under C:\tools\freepascal" }
+          Add-Content -Path $env:GITHUB_ENV -Value "FPC_GENERICS_DIR=$($genericsUnit.DirectoryName)"
+
       # win32_atexit_shim.c は Windows でのみ必要。UCRT版mingw-w64が
       # プレーンな`atexit`シンボルをどのライブラリにも持たないことへの対処
       # （理由は src/TSBindings.pas と HANDOFF.md を参照）。
@@ -120,7 +131,7 @@ jobs:
           for d in "${DIRS[@]}"; do
             FL_ARGS+=("-Fl$d")
           done
-          fpc -Xe -kbuild/win32_atexit_shim.o -k--allow-multiple-definition -k--strip-debug -Fusrc/Rules "${FL_ARGS[@]}" src/rawpaco.lpr
+          fpc -Xe -kbuild/win32_atexit_shim.o -k--allow-multiple-definition -k--strip-debug -Fusrc/Rules "-Fu$FPC_GENERICS_DIR" "${FL_ARGS[@]}" src/rawpaco.lpr
 
       - name: Run bootstrap self-check
         shell: bash
