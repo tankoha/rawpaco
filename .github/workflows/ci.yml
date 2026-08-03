@@ -85,6 +85,23 @@ jobs:
             FL_ARGS+=("-Fl$d")
           done
 
+          # tlssup.o を取り除いた libmingw32.a を用意する（_tls_used の重複定義を
+          # --allow-multiple-definition で握り潰すのではなく、根本から避ける案）
+          mkdir -p build/lib
+          for d in "${DIRS[@]}"; do
+            if [ -f "$d/libmingw32.a" ]; then cp "$d/libmingw32.a" build/lib/; fi
+          done
+          ar t build/lib/libmingw32.a | grep -i tlssup
+          ar d build/lib/libmingw32.a "$(ar t build/lib/libmingw32.a | grep -i tlssup)"
+          echo "after ar d:"; ar t build/lib/libmingw32.a | grep -i tlssup || echo "(tlssup removed)"
+
+          inspect() {
+            echo "--- ls:"; ls -l src/rawpaco.exe
+            echo "--- objdump -f:"; objdump -f src/rawpaco.exe | head -12
+            echo "--- run via bash:"; ./src/rawpaco.exe; echo "bash exit=$?"
+            echo "--- run via cmd:"; cmd //c "src\\rawpaco.exe"; echo "cmd exit=$?"
+          }
+
           attempt() {
             local name="$1"; shift
             rm -f src/rawpaco.exe src/*.o src/*.ppu
@@ -92,15 +109,12 @@ jobs:
             fpc "$@" src/rawpaco.lpr 2>&1 | tail -40
             if [ -f src/rawpaco.exe ]; then
               echo "----- ATTEMPT $name RESULT: exe produced"
+              inspect
             else
               echo "----- ATTEMPT $name RESULT: no exe"
             fi
           }
 
           attempt E-allow-multiple-def -Xe -kbuild/win32_atexit_shim.o -k--allow-multiple-definition "${FL_ARGS[@]}"
-          if [ -f src/rawpaco.exe ]; then ./src/rawpaco.exe; echo "selfcheck exit=$?"; fi
-          attempt F-drop-mingw32 -Xe -kbuild/win32_atexit_shim.o -dEXP_NO_MINGW32 "${FL_ARGS[@]}"
-          if [ -f src/rawpaco.exe ]; then ./src/rawpaco.exe; echo "selfcheck exit=$?"; fi
-          attempt G-drop-mingw32-and-dup -Xe -kbuild/win32_atexit_shim.o -dEXP_NO_MINGW32 -dEXP_NO_DUP -k--start-group -k-lmingwex -k-lgcc -k-lucrt -k-lkernel32 -k--end-group "${FL_ARGS[@]}"
-          if [ -f src/rawpaco.exe ]; then ./src/rawpaco.exe; echo "selfcheck exit=$?"; fi
+          attempt H-stripped-libmingw32 -Xe -kbuild/win32_atexit_shim.o -Flbuild/lib "${FL_ARGS[@]}"
           exit 0
