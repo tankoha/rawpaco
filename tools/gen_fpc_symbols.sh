@@ -65,6 +65,7 @@ if [ ! -d "$SRC_ROOT" ];   then echo "gen_fpc_symbols.sh: cannot locate fpc-sour
 #            「既知の名前」集合には引き続き使う）。
 UNIT_LIST='
 system loose
+objpas loose
 sysutils strict
 classes strict
 math strict

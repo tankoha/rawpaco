@@ -11,6 +11,7 @@
 | RAWPACO-SEC-002 | シークレットらしき文字列のハードコード検知 | 実装済み | `src/Rules/RuleSec002.pas`。設計書P3。positive 4件/negative 3件。`identifier := literalString`の単純代入と`declVar`/`declConst`の初期値付き宣言が対象。識別子名は接尾辞一致(単純部分一致だと`TokenList`等を誤検知するため)、値はプレースホルダらしき部分一致で除外 |
 | RAWPACO-DEPR-001 | 自己矛盾する非推奨API使用(同一ファイル内)検知 | 実装済み | `src/Rules/RuleDepr001.pas`。設計書P4。positive 3件/negative 2件。`deprecated`属性付き`declProc`の名前を集め、同一ファイル内の`exprCall`(括弧付き呼び出し)・裸の識別子文(括弧なし呼び出し)と照合。`Obj.Method`のようなクラスメソッド呼び出しは対象外 |
 | RAWPACO-DEPR-002 | FPC RTL/FCLの`deprecated`シンボル使用検知 | 実装済み | `src/Rules/RuleDepr002.pas`。設計書P6。positive 5件/negative 3件。`data/fpc-rtl-symbols.txt`(静的データ)を`src/FPCSymbols.pas`が読む。検知対象は「ユニットレベルで公開されているdeprecatedシンボル」29件(`SysUtils.DecimalSeparator`等の書式グローバル変数群、`SysUtils.GetTickCount`等)。fpc-source全体(4894ファイル)で誤検知ゼロを実測 |
+| RAWPACO-HALLUC-001 | FPC RTL/FCLに実在しない識別子(hallucination)検知 | 実装済み | `src/Rules/RuleHalluc001.pas`。設計書P7。positive 4件/negative 3件。DEPR-002とデータを共有。判定A=ユニット修飾された参照(`Math.Clamp`等)、判定B=修飾なし呼び出し(usesが全て既知ユニットの場合のみ)。fpc-source全体(4894ファイル)で誤検知ゼロを実測 |
 
 ## 見送ったルール（検討済み・意図的に未実装）
 
@@ -25,6 +26,8 @@
 - P4実装時に確認: 手続き・関数宣言は`declProc`(procedure/function/constructor/destructor共通)。括弧付き呼び出し`Foo()`は`exprCall`(フィールド`entity`)になるが、括弧なし呼び出し`Foo;`(引数なし手続きのPascal的な書き方)は`exprCall`にならず、`statement`ノードが唯一の子として直接`identifier`を持つだけの形になる。両方を見ないと呼び出しを取りこぼす。詳細は`src/Rules/RuleDepr001.pas`冒頭コメント参照。
 - P6実装時に確認: `A.B`は`exprDot`(フィールド`lhs`/`operator`/`rhs`)だが、`procedure TFoo.Bar;`のような実装ヘッダの名前は`exprDot`ではなく**`genericDot`**という別ノード種別になる（宣言名なので使用箇所として数えてはいけない）。`uses`節は`declUses`で各ユニットは`moduleName`ノード。`declVar`/`declField`は`A, B: Integer;`のように`name`フィールドを複数持ちうる。クラス/レコード/オブジェクトはいずれも`declClass`(先頭の子トークンが`kClass`/`kRecord`/`kObject`で区別)、インターフェースは`declIntf`、ヘルパは`declHelper`。可視性は`declSection`配下の`kPrivate`/`kProtected`/`kPublic`/`kPublished`(+`kStrict`)。`class var`はクラス内でも`declVars`/`declVar`になり`declField`にはならない。詳細は`src/Rules/RuleDepr002.pas`冒頭コメント参照。
 - P6実装時の実測知見（誤検知対策）: `with Rec do ... end` の本体では裸の識別子がレコードのフィールドを指すため、型解決なしでは RTL のグローバル変数と区別できない。fpc-source 全体(4894ファイル)に当てたところ、`with FormatSettings do begin DecimalSeparator := '.'; ... end` という典型的（かつ推奨される）書き方が誤検知の最大要因（91件中58件）だった。`with`の`body`フィールド配下は走査しないことで解消し、残り33件は全て真陽性であることを目視確認済み。
+- P7実装時に確認: `root`の直下は`unit`/`program`/`library`のいずれか、または（`{$i}`で他ファイルに取り込まれる前提の断片の場合）`declTypes`/`declVars`等が直接並ぶ形になる。`inherited Go;`は`exprCall`ではなく`inherited`ノード(`kInherited` + `identifier`)。`ts_node_has_error`(api.h 533行目)で構文エラーの有無を判定できる。
+- P7実装時の実測知見（誤検知対策）: fpc-source全体に当てた初版で190件の誤検知が出た。内訳と対処は (1) 175件が`{$MACRO ON}` + `{$define Rsc := }`によるマクロ展開（tree-sitterは展開しないので消える識別子を「実在しない」と誤認）→ `{$MACRO`を含むファイルでは判定Bを無効化、(2) `uses`が1つも無いファイル（`{$i}`で組み立てられるRTL内部ユニットやinclude断片）→ 「usesが1つ以上あり全て既知」を判定Bの前提条件に、(3) `AssignFile`/`CloseFile`が見つからない → これらは`system`ではなく`objpas`ユニット（objfpc/delphiモードで暗黙にuses）にあるため、`objpas`をデータ生成対象に追加。対処後は誤検知ゼロ。
 - P4実装時の設計判断: `RuleRegistry`に登録されるルールインスタンスは`initialization`で一度だけ生成され、`RunLint`が複数ファイルを処理する間ずっと使い回される。RAWPACO-DEPR-001は「ファイル内でdeprecated宣言を集めてから使用箇所を照合する」という2パス処理(ファイル単位の一時的な状態)が必要だが、インスタンスフィールドに状態を持たせるとファイルをまたいで漏れる。これを避けるため`InterestedNodeTypes`を最上位の`root`ノードのみとし、1ファイルにつき1回のCheck呼び出しの中でローカル変数を使って自己完結した探索を行う設計とした(ASTWalker等の共通インフラは無改修)。複数ファイルを1回の実行で渡し、片方だけにdeprecated宣言がある状態で状態漏れがないことを実装時に確認済み。
 
 ## FPC RTL/FCL シンボル一覧 (`data/fpc-rtl-symbols.txt`) について
@@ -40,7 +43,7 @@
 
 ## 自己lint到達状況
 
-- 本ツール自身のソースへの自己適用: `./src/rawpaco src/*.pas src/Rules/*.pas` をローカルで実行し、誤検知・真陽性ともにゼロを確認済み（2026-08-04時点、RAWPACO-DEFENSE-001・RAWPACO-SEC-001・RAWPACO-SEC-002・RAWPACO-DEPR-001の4ルール）。
+- 本ツール自身のソースへの自己適用: `./src/rawpaco src/*.pas src/Rules/*.pas src/rawpaco.lpr` をローカルで実行し、誤検知・真陽性ともにゼロを確認済み（2026-08-04時点、RAWPACO-DEFENSE-001・RAWPACO-SEC-001・RAWPACO-SEC-002・RAWPACO-DEPR-001・RAWPACO-DEPR-002・RAWPACO-HALLUC-001の6ルール）。
 - CIへの自己lintステップ追加: 未実施（ルールが1つしかなく、`--only`/`--exclude`によるルール個別スコープ導入の効果がまだ薄いため見送り。ルールが増えてきたら`docs/RULE_ENGINE_DESIGN.md`5節の手順で段階導入する）。
 
 ## tree-sitter本体・tree-sitter-pascalのvendoring方針（確定）

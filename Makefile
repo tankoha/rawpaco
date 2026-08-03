@@ -19,6 +19,7 @@ RULE_SOURCES := src/Diagnostics.pas src/RuleRegistry.pas src/ASTWalker.pas \
                 src/Rules/RuleDefense001.pas \
                 src/Rules/RuleSec001.pas src/Rules/RuleSec002.pas \
                 src/Rules/RuleDepr001.pas src/Rules/RuleDepr002.pas \
+                src/Rules/RuleHalluc001.pas \
                 src/Rules/AllRules.pas
 
 .PHONY: all clean test

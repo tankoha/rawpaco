@@ -104,6 +104,14 @@ function ts_node_end_point(node: TSNode): TSPoint; cdecl; external;
 function ts_node_start_byte(node: TSNode): LongWord; cdecl; external;
 function ts_node_end_byte(node: TSNode): LongWord; cdecl; external;
 
+// RAWPACO-HALLUC-001実装に伴う追加。シグネチャは
+// vendor/tree-sitter/include/tree_sitter/api.h の533行目で確認済み
+// (CLAUDE.mdルール1)。「このノード以下に構文エラーがあるか」を返す。
+// パースに失敗した(あるいは文法が対応していない書き方を含む)ファイルでは
+// 木の形が信用できないため、「知らない識別子＝存在しない」という推論を
+// 行わないための門番として使う。
+function ts_node_has_error(node: TSNode): Boolean; cdecl; external;
+
 function tree_sitter_pascal: TSLanguage; cdecl; external name 'tree_sitter_pascal';
 
 implementation
