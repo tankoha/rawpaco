@@ -13,7 +13,7 @@ unit AllRules;
 interface
 
 uses
-  RuleDefense001, RuleSec001;
+  RuleDefense001, RuleSec001, RuleSec002;
 
 implementation
 

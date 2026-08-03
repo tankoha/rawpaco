@@ -16,7 +16,7 @@ TSP_OBJ := $(BUILD)/tree-sitter-pascal.o
 
 RULE_SOURCES := src/Diagnostics.pas src/RuleRegistry.pas src/ASTWalker.pas \
                 src/LintDriver.pas src/Rules/RuleDefense001.pas \
-                src/Rules/RuleSec001.pas src/Rules/AllRules.pas
+                src/Rules/RuleSec001.pas src/Rules/RuleSec002.pas src/Rules/AllRules.pas
 
 .PHONY: all clean test
 

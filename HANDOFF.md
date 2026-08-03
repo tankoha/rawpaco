@@ -8,6 +8,7 @@
 |---|---|---|---|
 | RAWPACO-DEFENSE-001 | 空のexceptハンドラ(例外の握りつぶし)検知 | 実装済み | `src/Rules/RuleDefense001.pas`。設計書P1。positive 3件/negative 4件、`make test`で検証 |
 | RAWPACO-SEC-001 | SQL文字列連結(SQLインジェクションの疑い)検知 | 実装済み | `src/Rules/RuleSec001.pas`。設計書P2。positive 3件/negative 2件。片方だけがSQLキーワードを含むliteralStringで、もう片方が非リテラルの場合のみ検知(両方リテラル/両方非リテラルは対象外) |
+| RAWPACO-SEC-002 | シークレットらしき文字列のハードコード検知 | 実装済み | `src/Rules/RuleSec002.pas`。設計書P3。positive 4件/negative 3件。`identifier := literalString`の単純代入と`declVar`/`declConst`の初期値付き宣言が対象。識別子名は接尾辞一致(単純部分一致だと`TokenList`等を誤検知するため)、値はプレースホルダらしき部分一致で除外 |
 
 ## 見送ったルール（検討済み・意図的に未実装）
 
@@ -17,10 +18,12 @@
 
 - `docs/RULE_ENGINE_DESIGN.md`のP1設計時点での想定（`exceptionHandler`/`exceptionElse`がexcept節全体を表すノードであるかのような記述）は誤りだった。実際はtry/except/finally全体が単一ノード種別`try`であり、`except`フィールド(multiple:true)に`kExcept`トークンと`statements`/`exceptionHandler`/`exceptionElse`が並ぶ構造。`vendor/tree-sitter-pascal/src/node-types.json`とgrammar.jsで直接確認する必要がある(ドキュメントの想定を鵜呑みにしない)。詳細は`src/Rules/RuleDefense001.pas`冒頭コメント参照。
 - P2実装時に確認: 二項式は`exprBinary`(フィールドlhs/operator/rhs)、`+`演算子はoperatorフィールドの子`kAdd`(無名の`'+'`トークンではない)。文字列リテラルは`literalString`で、`ts_node_start_byte`/`end_byte`で切り出したテキストは前後の引用符を含む(値だけを返すフィールドは無い)。詳細は`src/Rules/RuleSec001.pas`冒頭コメント参照。
+- P3実装時に確認: `declVar`/`declConst`の`defaultValue`フィールドの中身(`defaultValue`ノード)自体はフィールドを持たず、`kEq`トークンと初期値式が位置的に並ぶだけ。フィールド名検索ではなく「`kEq`以外の子」を位置的に拾う必要がある。手続き引数の`var`宣言は`declVar`ではなく別ノード種別`declArg`。詳細は`src/Rules/RuleSec002.pas`冒頭コメント参照。
+- RAWPACO-SEC-002の既知のスコープ外(次の拡張候補): `Obj.Password := 'x'`のような`exprDot`経由のプロパティ・フィールド代入は検知しない。実務では単純な`identifier := literalString`より一般的な可能性すらあるパターンだが、末端の識別子名を取り出すロジックが別途必要で第一段のスコープを超えるため見送った。
 
 ## 自己lint到達状況
 
-- 本ツール自身のソースへの自己適用: `./src/rawpaco src/*.pas src/Rules/*.pas` をローカルで実行し、誤検知・真陽性ともにゼロを確認済み（2026-08-04時点、RAWPACO-DEFENSE-001・RAWPACO-SEC-001）。
+- 本ツール自身のソースへの自己適用: `./src/rawpaco src/*.pas src/Rules/*.pas` をローカルで実行し、誤検知・真陽性ともにゼロを確認済み（2026-08-04時点、RAWPACO-DEFENSE-001・RAWPACO-SEC-001・RAWPACO-SEC-002の3ルール）。
 - CIへの自己lintステップ追加: 未実施（ルールが1つしかなく、`--only`/`--exclude`によるルール個別スコープ導入の効果がまだ薄いため見送り。ルールが増えてきたら`docs/RULE_ENGINE_DESIGN.md`5節の手順で段階導入する）。
 
 ## tree-sitter本体・tree-sitter-pascalのvendoring方針（確定）
