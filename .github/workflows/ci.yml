@@ -76,15 +76,19 @@ jobs:
           Add-Content -Path $env:GITHUB_ENV -Value "MINGW_LIB_DIRS=$($libDirs -join ';')"
 
           # choco版freepascalのデフォルトのユニット検索パスには、rtl-generics
-          # パッケージ(Generics.Collections等)のディレクトリが含まれていない
-          # 模様（"Fatal: Can't find unit Generics.Collections" で判明。
+          # 等のパッケージサブディレクトリが含まれていない模様（最初は
+          # "Can't find unit Generics.Collections"、個別に-Fuで足すと今度は
+          # 依存先の"Can't find unit Variants"と芋づる式に不足が発覚した）。
           # Linux(apt版)のfpc.cfgはunits/$fpctarget/*というワイルドカードで
-          # 全パッケージサブディレクトリを自動的に検索パスに含めているが、
-          # choco版のfpc.cfgは同様になっていないと推測される）。実際の設置
-          # 場所を検索し、-Fu（ユニット検索パス）として後続ステップに渡す。
+          # 全パッケージサブディレクトリを自動的に検索パスに含めているため、
+          # 同じ方式(ワイルドカード)をchoco版にも適用し、パッケージ単位で
+          # 個別に対処するのをやめる。rtl-genericsディレクトリの親
+          # (units\i386-win32)がfpctarget相当のディレクトリなので、そこに
+          # \*を付けて全パッケージサブディレクトリを一括で検索パスに含める。
           $genericsUnit = Get-ChildItem -Path 'C:\tools\freepascal' -Include 'generics.collections.ppu','generics.collections.pas' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $genericsUnit) { throw "generics.collections.ppu/.pas not found under C:\tools\freepascal" }
-          Add-Content -Path $env:GITHUB_ENV -Value "FPC_GENERICS_DIR=$($genericsUnit.DirectoryName)"
+          $fpcUnitsRoot = Split-Path -Parent $genericsUnit.DirectoryName
+          Add-Content -Path $env:GITHUB_ENV -Value "FPC_UNITS_ROOT=$fpcUnitsRoot"
 
       # win32_atexit_shim.c は Windows でのみ必要。UCRT版mingw-w64が
       # プレーンな`atexit`シンボルをどのライブラリにも持たないことへの対処
@@ -131,7 +135,7 @@ jobs:
           for d in "${DIRS[@]}"; do
             FL_ARGS+=("-Fl$d")
           done
-          fpc -Xe -kbuild/win32_atexit_shim.o -k--allow-multiple-definition -k--strip-debug -Fusrc/Rules "-Fu$FPC_GENERICS_DIR" "${FL_ARGS[@]}" src/rawpaco.lpr
+          fpc -Xe -kbuild/win32_atexit_shim.o -k--allow-multiple-definition -k--strip-debug -Fusrc/Rules "-Fu$FPC_UNITS_ROOT/*" "${FL_ARGS[@]}" src/rawpaco.lpr
 
       - name: Run bootstrap self-check
         shell: bash
