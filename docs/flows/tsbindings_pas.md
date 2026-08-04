@@ -1,37 +1,39 @@
-# プログラムフロー: src/TSBindings.pas
+# Program Flow: src/TSBindings.pas
 
-`TSBindings.pas` はユニットであり、実行時のロジック（`implementation`部）を持ちません。すべての関数が `external`（他所でコンパイル済みのオブジェクトへの外部バインディング）であるため、ここでの「フロー」は実行時の処理順序ではなく、**コンパイル時にどの条件分岐が選択され、最終的にどうリンクされるか**というコンパイル/リンクフローになります。
+*A Japanese translation is kept for reference at [docs/flows/tsbindings_pas_jp.md](tsbindings_pas_jp.md); this English version is canonical.*
+
+`TSBindings.pas` is a unit with no runtime logic (no `implementation` body). Every function is `external` (an external binding to an object compiled elsewhere), so the "flow" here isn't a runtime processing order — it's a **compile/link flow**: which conditional branches the compiler takes at compile time, and what it ultimately links into.
 
 ```mermaid
 flowchart TD
-    Start(["ユニットのコンパイル開始"]) --> Target{"コンパイルターゲットは？"}
+    Start(["Unit compilation starts"]) --> Target{"What's the compile target?"}
 
-    Target -->|"{$IFDEF LINUX}"| LinuxBranch["{$linklib c}\n※-k経由の手動-lcはFPCが\nダイナミックリンカのパスを\n誤検出するため、この方式で\nlibcリンクをFPC自身に解決させる"]
+    Target -->|"{$IFDEF LINUX}"| LinuxBranch["{$linklib c}\n*A manual -lc passed via -k makes FPC\nmisdetect the dynamic linker's path,\nso this directive lets FPC itself\nresolve the libc link instead"]
 
-    Target -->|"{$IFDEF MSWINDOWS}"| WinBranch["{$linklib mingwex}\n{$linklib mingw32}\n{$linklib gcc}\n{$linklib ucrt}\n{$linklib kernel32}\n{$linklib winpthread}\n{$linklib mingwex}（2周目）\n{$linklib mingw32}（2周目）\n{$linklib gcc}（2周目）\n※circular依存の\n古典的2周回避策"]
+    Target -->|"{$IFDEF MSWINDOWS}"| WinBranch["{$linklib mingwex}\n{$linklib mingw32}\n{$linklib gcc}\n{$linklib ucrt}\n{$linklib kernel32}\n{$linklib winpthread}\n{$linklib mingwex} (2nd pass)\n{$linklib mingw32} (2nd pass)\n{$linklib gcc} (2nd pass)\n*The classic two-pass\nworkaround for circular dependencies"]
 
     LinuxBranch --> EmbedObjs
     WinBranch --> EmbedObjs
 
-    EmbedObjs["{$L ../build/tree-sitter.o}\n{$L ../build/tree-sitter-pascal.o}\nvendorのCソースをコンパイル済み\nオブジェクトとして静的リンク"]
+    EmbedObjs["{$L ../build/tree-sitter.o}\n{$L ../build/tree-sitter-pascal.o}\nStatically link the vendor C sources\nas pre-compiled objects"]
 
-    EmbedObjs --> Interface["interface部:\n型定義(TSParser/PTSTree/TSLanguage/TSNode)\n+ external関数宣言"]
+    EmbedObjs --> Interface["interface section:\ntype definitions (TSParser/PTSTree/TSLanguage/TSNode)\n+ external function declarations"]
 
-    Interface --> ExtFns["ts_parser_new / ts_parser_delete /\nts_parser_set_language /\nts_parser_parse_string /\nts_tree_root_node / ts_tree_delete /\nts_node_string\n（すべて実体はtree-sitter.oの中）"]
+    Interface --> ExtFns["ts_parser_new / ts_parser_delete /\nts_parser_set_language /\nts_parser_parse_string /\nts_tree_root_node / ts_tree_delete /\nts_node_string\n(all actually defined inside tree-sitter.o)"]
 
-    Interface --> ExtLang["tree_sitter_pascal\n（実体はtree-sitter-pascal.oの中）"]
+    Interface --> ExtLang["tree_sitter_pascal\n(actually defined inside tree-sitter-pascal.o)"]
 
-    ExtFns --> Consumers["呼び出し側(rawpaco.lpr等)から\ncdecl呼び出しとしてリンクされる"]
+    ExtFns --> Consumers["Linked into callers (rawpaco.lpr etc.)\nas cdecl calls"]
     ExtLang --> Consumers
 
-    Consumers --> WinShim{"MSWINDOWSの場合のみ\n追加で必要なもの"}
-    WinShim -->|"atexit未解決対策"| ShimNote["src/win32_atexit_shim.c を\nCI側でコンパイルし、\n-k経由でldに直接渡す\n（{$L}で埋め込むとFPC内部\nリンカがクラッシュするため\nこのファイルには含めない）"]
+    Consumers --> WinShim{"Extra requirement,\nMSWINDOWS only"}
+    WinShim -->|"workaround for unresolved atexit"| ShimNote["src/win32_atexit_shim.c is compiled\non the CI side and passed directly\nto ld via -k\n(not included here via {$L}, since\nthat crashes FPC's internal linker)"]
 
-    Consumers --> End(["リンク完了・実行可能ファイル生成"])
+    Consumers --> End(["Linking complete, executable produced"])
 ```
 
-## 補足
+## Notes
 
-- このファイル自体に「実行される手続き」は存在しません。すべての関数は `cdecl; external;` （またはexternal name指定）であり、実体は `vendor/` 配下のCソースをコンパイルした `build/*.o` 側にあります。
-- `{$linklib}` ディレクティブと `{$L}` ディレクティブは、いずれも実行時ではなく**リンク時**に効果を持ちます。図中で「フロー」として示しているのは、コンパイラがどのIFDEF分岐を通り、最終的にどんなリンカ引数・埋め込みオブジェクトの組み合わせに帰着するかという静的な決定過程です。
-- Windows向けの `atexit` 未解決シンボル対策（`src/win32_atexit_shim.c`）は、`{$L}` でこのユニットに直接埋め込むとFPC 3.2.2のwin32ターゲット内部リンカがクラッシュするバグを踏むため、あえてこのファイルの管轄外（CI側で`-k`経由）としている点が設計上の重要な分岐点です。詳細な経緯は [HANDOFF.md](../../HANDOFF.md) を参照してください。
+- This file itself has no "procedures that get executed." Every function is `cdecl; external;` (or has an `external name` clause); the actual bodies live in `build/*.o`, compiled from the C sources under `vendor/`.
+- Both the `{$linklib}` and `{$L}` directives take effect at **link time**, not at runtime. What the "flow" in the diagram shows is the static decision process by which the compiler resolves an IFDEF branch and ends up with a particular combination of linker arguments and embedded objects.
+- The workaround for Windows' unresolved `atexit` symbol (`src/win32_atexit_shim.c`) deliberately falls outside this file's jurisdiction (handled via `-k` on the CI side instead), because embedding it directly into this unit via `{$L}` triggers a crash bug in FPC 3.2.2's win32-target internal linker — an important design fork. See [HANDOFF.md](../../HANDOFF.md) for the full history.

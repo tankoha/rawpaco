@@ -1,98 +1,101 @@
-# ルールエンジン設計書
+# Rule Engine Design Document
 
-このドキュメントは rawpaco の lint ルールエンジン全体の設計をまとめたものです。CLAUDE.md の開発ルール、README.md の目的・実装方針を前提とし、これらと矛盾しないように設計しています。決着していない大きな方針転換候補は「8. 未決事項・提案」に切り出し、断定を避けています。全体のシステムフローをMermaid図で俯瞰したい場合は [docs/SYSTEM_FLOW.md](SYSTEM_FLOW.md) を参照してください。
+*A Japanese translation is kept for reference at [docs/RULE_ENGINE_DESIGN_jp.md](RULE_ENGINE_DESIGN_jp.md); this English version is canonical.*
 
-実装は Sonnet5 が担当する前提で書いています。各項目の末尾に担当を明記しており、省略時は Sonnet5 とみなします（依頼内容の指示に準拠）。複雑なアルゴリズム設計・曖昧な仕様判断・大きなアーキテクチャ決定を要する項目には「担当: Opus5」を明記しています。
+This document summarizes the overall design of rawpaco's lint rule engine. It is written to be consistent with the development rules in CLAUDE.md and the purpose/approach described in README.md. Any major, unresolved policy questions are split out into "7. Open Questions / Proposals" rather than being decided unilaterally here. For a bird's-eye view of the overall system flow as Mermaid diagrams, see [docs/SYSTEM_FLOW.md](SYSTEM_FLOW.md).
 
-## 0. 前提・制約
+This document is written on the assumption that Sonnet5 will handle the implementation. Each item's owner is noted at its end; when omitted, Sonnet5 is assumed (per the original request). Items that require complex algorithm design, ambiguous specification judgment calls, or major architectural decisions are explicitly marked "Owner: Opus5".
 
-rawpaco は tree-sitter-pascal による**構文解析のみ**を行うツールであり、以下ができません。
+## 0. Assumptions and Constraints
 
-- 型解決（変数・式の型を確定できない。`identifier` が何を指すかは構文的な位置関係からしか推測できない）
-- スコープ解決（宣言と使用箇所を跨いだ名前解決。同名の識別子が別スコープに複数あっても区別できない）
-- 外部レジストリ・パッケージマネージャへの照会（あるユニット・パッケージが実在するか、正しいバージョンかをネットワーク越しに確認する手段がない）
-- 実行時情報（値の実際の内容、null 安全性の証明など）
+rawpaco is a tool that performs **syntax analysis only**, via tree-sitter-pascal, and therefore cannot do the following:
 
-このため、以下の設計全体を通じて「構文パターンとして安全に検知できるもの」と「意味・型情報がないと原理的に検知できないもの」を区別し、後者については代替案（バンドルする静的データ、compiler自体をオラクルとして使う、等）を明記します。CLAUDE.md ルール5（false positive 回避優先、疑わしきは見逃す）がある以上、「検知できそうだが確信が持てない」ものは意図的にスコープから外しています。
+- Type resolution (it cannot determine the type of a variable or expression; what an `identifier` refers to can only be inferred from its syntactic position)
+- Scope resolution (name resolution across declaration and use sites; it cannot distinguish between identically-named identifiers in different scopes)
+- Querying external registries or package managers (there is no way to check over the network whether a given unit or package actually exists, or whether it's the right version)
+- Runtime information (the actual contents of values, proof of null-safety, etc.)
 
-## 1. ルールエンジンAPI設計
+For this reason, the design below consistently distinguishes between what can be safely detected as a syntactic pattern and what is, in principle, undetectable without semantic/type information — and for the latter, alternative approaches (bundling static data, using the compiler itself as an oracle, etc.) are noted explicitly. Given CLAUDE.md rule 5 (prioritize avoiding false positives; when in doubt, let it go), anything that "seems detectable but isn't certain" is deliberately excluded from scope.
 
-### 1.1 全体アーキテクチャ
+## 1. Rule Engine API Design
+
+### 1.1 Overall Architecture
 
 ```
-rawpaco.lpr (CLIエントリポイント)
-  └─ LintDriver.pas   … 対象ファイル列挙、パース、走査、診断集約、出力、終了コード決定
-       ├─ ASTWalker.pas   … TSNodeツリーを tree-sitter cursor APIで走査する汎用ドライバ
-       ├─ RuleRegistry.pas … ルールの登録・ノード種別ごとのディスパッチテーブル
-       ├─ Diagnostics.pas  … TDiagnostic レコード、出力フォーマッタ
-       └─ Rules/*.pas      … ルール本体（1ルール1ユニット）
+rawpaco.lpr (CLI entry point)
+  └─ LintDriver.pas   … enumerates target files, parses, walks, aggregates diagnostics, outputs, decides exit code
+       ├─ ASTWalker.pas   … generic driver that walks the TSNode tree via the tree-sitter cursor API
+       ├─ RuleRegistry.pas … rule registration and the per-node-type dispatch table
+       ├─ Diagnostics.pas  … the TDiagnostic record, output formatter
+       └─ Rules/*.pas      … rule bodies (one unit per rule)
 ```
 
-現状の `src/rawpaco.lpr` は tree-sitter-pascal が動くことを確認するだけの自己チェックプログラムであり、上記の構造はまだ存在しません。ルール第1号の実装時にあわせて `LintDriver`/`ASTWalker`/`RuleRegistry`/`Diagnostics` を切り出すことを想定しています。（担当: Sonnet5）
+Currently, `src/rawpaco.lpr` is just a bootstrap self-check program that confirms tree-sitter-pascal works; the structure above does not exist yet. The plan is to split out `LintDriver`/`ASTWalker`/`RuleRegistry`/`Diagnostics` when the first rule is implemented. (Owner: Sonnet5)
 
-### 1.2 TSBindings.pas の拡張が必要
+### 1.2 TSBindings.pas needs to be extended
 
-現状の `src/TSBindings.pas` は自己チェック用の最小限の関数（`ts_parser_new`, `ts_parser_set_language`, `ts_parser_parse_string`, `ts_tree_root_node`, `ts_tree_delete`, `ts_node_string`, `ts_parser_delete`）しか宣言しておらず、AST を走査するための関数が不足しています。ルールエンジンの実装に先立って、少なくとも以下を追加する必要があります（関数名・シグネチャは `vendor/tree-sitter/include/tree_sitter/api.h` で確認済み。CLAUDE.mdルール1に従い、この節で使う関数はすべて同ヘッダに実在する名前のみを挙げています）。
+Currently, `src/TSBindings.pas` only declares the minimal functions needed for the bootstrap self-check (`ts_parser_new`, `ts_parser_set_language`, `ts_parser_parse_string`, `ts_tree_root_node`, `ts_tree_delete`, `ts_node_string`, `ts_parser_delete`), and is missing the functions needed to walk the AST. Before implementing the rule engine, at least the following need to be added (function names/signatures have been verified against `vendor/tree-sitter/include/tree_sitter/api.h`; per CLAUDE.md rule 1, every function listed in this section is one that actually exists in that header).
 
-- `ts_node_type(TSNode): PAnsiChar` — ノード種別名（`node-types.json` の `type` と対応）
+- `ts_node_type(TSNode): PAnsiChar` — the node's type name (corresponds to `type` in `node-types.json`)
 - `ts_node_is_null(TSNode): Boolean`
 - `ts_node_child_count(TSNode): LongWord` / `ts_node_named_child_count(TSNode): LongWord`
 - `ts_node_child(TSNode; index: LongWord): TSNode` / `ts_node_named_child(TSNode; index: LongWord): TSNode`
-- `ts_node_field_name_for_child(TSNode; index: LongWord): PAnsiChar` — フィールド名（`node-types.json` の `fields` のキー、例: `exprBinary` の `lhs`/`operator`/`rhs`）付きの子を扱うために必要
-- `ts_node_start_point(TSNode): TSPoint` / `ts_node_end_point(TSNode): TSPoint` — 診断の行・列番号に使用（`TSPoint = record row, column: LongWord end;` を `api.h` の定義通りに追加）
-- カーソルAPI（子ノードが多い場合に `ts_node_child` の毎回の再計算を避けるための効率化。将来大きなファイルを扱う際に有効）: `ts_tree_cursor_new`, `ts_tree_cursor_delete`, `ts_tree_cursor_current_node`, `ts_tree_cursor_current_field_name`, `ts_tree_cursor_goto_first_child`, `ts_tree_cursor_goto_next_sibling`, `ts_tree_cursor_goto_parent`
+- `ts_node_field_name_for_child(TSNode; index: LongWord): PAnsiChar` — needed to access children by field name (the keys under `fields` in `node-types.json`, e.g. `exprBinary`'s `lhs`/`operator`/`rhs`)
+- `ts_node_start_point(TSNode): TSPoint` / `ts_node_end_point(TSNode): TSPoint` — used for diagnostic line/column numbers (add `TSPoint = record row, column: LongWord end;` exactly as defined in `api.h`)
+- Cursor API (an optimization to avoid recomputing `ts_node_child` on every call when a node has many children; useful once large files need to be handled efficiently): `ts_tree_cursor_new`, `ts_tree_cursor_delete`, `ts_tree_cursor_current_node`, `ts_tree_cursor_current_field_name`, `ts_tree_cursor_goto_first_child`, `ts_tree_cursor_goto_next_sibling`, `ts_tree_cursor_goto_parent`
 
-ブートストラップ段階では `ts_node_child`/`ts_node_child_count` による素朴な再帰下降で十分であり、カーソルAPIへの切り替えは最適化が必要になった時点で構わないと考えます。（担当: Sonnet5。ただし関数追加のたびに CLAUDE.md ルール1の照合先が `vendor/tree-sitter/include/tree_sitter/api.h` であることを踏まえ、都度シグネチャを確認しコメントに出典を残すこと。）
+At the bootstrap stage, a naive recursive descent via `ts_node_child`/`ts_node_child_count` is sufficient; switching to the cursor API can wait until optimization is actually needed. (Owner: Sonnet5. Note that every time a function is added, per CLAUDE.md rule 1 the reference to check against is `vendor/tree-sitter/include/tree_sitter/api.h` — verify the signature each time and leave a comment citing the source.)
 
-### 1.3 走査ドライバ (ASTWalker.pas)
+### 1.3 Traversal Driver (ASTWalker.pas)
 
-ノード種別文字列をキーにしたディスパッチテーブルを持つ、単純な深さ優先走査を提案します。
+A simple depth-first traversal is proposed, backed by a dispatch table keyed on node type strings.
 
 ```pascal
 type
   TNodeVisitProc = procedure(const Node: TSNode; Ctx: TLintContext) of object;
 
-// ノード種別名 -> そのノードに関心を持つルールのVisitProcリスト
-// (RuleRegistryが「自分はexprBinaryとassignmentだけ見る」のように
-//  関心のあるノード種別を宣言し、走査側は全ルールを毎ノードで
-//  呼び出すのではなく該当するものだけを呼ぶ。ノード種別は271種と
-//  少なくないため、全ルール全ノード総当たりを避ける設計判断。)
+// node type name -> list of VisitProcs for rules interested in that node
+// (RuleRegistry lets each rule declare the node types it cares about, e.g.
+//  "I only care about exprBinary and assignment," so the walker calls only
+//  the relevant rules per node instead of every rule on every node. With
+//  271 distinct node types, this avoids an all-rules-times-all-nodes
+//  brute-force design.)
 procedure WalkTree(const Root: TSNode; Ctx: TLintContext);
 ```
 
-走査自体はルールのロジックを一切知らず、`RuleRegistry` が管理するディスパッチテーブルを引くだけにします。ルールを追加してもこのファイルは変更不要にするのが狙いです。（担当: Sonnet5）
+The traversal itself knows nothing about rule logic; it merely looks up the dispatch table managed by `RuleRegistry`. The goal is that adding a new rule never requires changing this file. (Owner: Sonnet5)
 
-### 1.4 ルールの実装単位とインターフェース
+### 1.4 Rule Implementation Unit and Interface
 
-1ルール = 1ユニット（`src/Rules/RuleXxx.pas`）を基本単位とします。ルールは以下のインターフェースを実装します。
+The basic unit is one rule per unit (`src/Rules/RuleXxx.pas`). Rules implement the following interface.
 
 ```pascal
 type
-  TSeverity = (svWarning); // 将来 svError 等を追加する余地は残すが、
-                           // 現時点では全ルールを svWarning 統一とする
-                           // (CLAUDE.mdルール5: 誤検知回避優先の方針上、
-                           //  「これはエラーで問答無用でCIを落とす」と
-                           //  断定できるルールはまだ無いと判断したため)
+  TSeverity = (svWarning); // Room is left to add svError etc. later, but for
+                           // now every rule is uniformly svWarning (per
+                           // CLAUDE.md rule 5's false-positive-avoidance
+                           // priority, no rule has yet been judged reliable
+                           // enough to unconditionally fail CI as an error)
 
   IRawpacoRule = interface
-    function RuleId: string;         // 例: 'RAWPACO-SEC-001'
-    function Description: string;    // 1行説明（診断メッセージの土台）
-    function InterestedNodeTypes: TStringArray; // ['exprBinary', 'assignment'] 等
+    function RuleId: string;         // e.g. 'RAWPACO-SEC-001'
+    function Description: string;    // one-line description (basis for the diagnostic message)
+    function InterestedNodeTypes: TStringArray; // e.g. ['exprBinary', 'assignment']
     procedure Check(const Node: TSNode; Ctx: TLintContext);
   end;
 ```
 
-- `RuleId` は `RAWPACO-<カテゴリ>-<連番>` 形式に統一します（カテゴリ例: `SEC`=セキュリティ, `STYLE`=一貫性・命名, `DEPR`=非推奨API, `DEFENSE`=過剰防御, `HALLUC`=hallucination）。カテゴリは「5つの問題点」との対応を追跡しやすくするためのものです。
-- `InterestedNodeTypes` を宣言させることで、`RuleRegistry` がディスパッチテーブルを構築できます。
-- `Check` 内で問題を見つけたら `Ctx.Report(RuleId, Message, Node)` を呼びます。`Ctx` が `ts_node_start_point` からファイル名・行・列を引いて `TDiagnostic` を組み立てます。
+- `RuleId` follows a uniform `RAWPACO-<category>-<number>` format (example categories: `SEC` = security, `STYLE` = consistency/naming, `DEPR` = deprecated API, `DEFENSE` = excessive defensiveness, `HALLUC` = hallucination). The category exists to make it easy to trace back to the "five problems".
+- Declaring `InterestedNodeTypes` lets `RuleRegistry` build the dispatch table.
+- When `Check` finds a problem, it calls `Ctx.Report(RuleId, Message, Node)`. `Ctx` derives the file name/line/column from `ts_node_start_point` and assembles a `TDiagnostic`.
 
-**登録方法について（FPCの制約）**: FPC には実行時のアセンブリスキャンやアノテーション自動収集の仕組みがありません。そのため「ユニットを置くだけで自動的に有効になる」プラグイン方式は実現できず、各ルールユニットは
-1. `initialization` セクションで `RuleRegistry.Register(TRuleXxx.Create)` を呼ぶ
-2. かつ、そのユニット自体を `Rules/AllRules.pas` の `uses` 節に列挙する（`initialization` はユニットが実際に `uses` されて初めて実行されるため）
+**On the registration mechanism (an FPC constraint)**: FPC has no runtime assembly-scanning or automatic annotation-collection mechanism. This rules out a "just drop the unit in and it's automatically active" plugin model. Instead, each rule unit needs both of:
+1. Calling `RuleRegistry.Register(TRuleXxx.Create)` in its `initialization` section
+2. Being listed in the `uses` clause of `Rules/AllRules.pas` (since `initialization` only runs once a unit is actually `uses`d)
 
-の両方が必要です。新しいルールを追加した際に `AllRules.pas` への追記を忘れると静かに無効なままになる、という失敗しやすいポイントなので、`AllRules.pas` の冒頭コメントに「なぜ」（CLAUDE.mdルール8）としてこの制約を明記しておくこと。（担当: Sonnet5）
+This is an easy mistake to make — forgetting to add an entry to `AllRules.pas` for a new rule leaves it silently inactive — so this constraint must be documented as the "why" (CLAUDE.md rule 8) in `AllRules.pas`'s header comment. (Owner: Sonnet5)
 
-### 1.5 診断とコンテキスト
+### 1.5 Diagnostics and Context
 
 ```pascal
 type
@@ -100,8 +103,8 @@ type
     RuleId: string;
     Message: string;
     FileName: string;
-    Line, Column: LongWord;   // 1-origin（人間向け表示に合わせる。
-                               // ts_node_start_pointは0-originなので+1する）
+    Line, Column: LongWord;   // 1-origin (to match human-facing display;
+                               // ts_node_start_point is 0-origin, so +1)
     Severity: TSeverity;
   end;
 
@@ -109,213 +112,215 @@ type
   private
     FDiagnostics: specialize TList<TDiagnostic>; // Generics.Collections
     FFileName: string;
-    FSource: PAnsiChar; // ソース全体。identifier等のバイト範囲からテキストを
-                          // 切り出すために保持（ts_node_stringは括弧付きの
-                          // S式表現しか返さないため、実際のトークン文字列が
-                          // 必要な場合はソースバイト列から自前で切り出す）
+    FSource: PAnsiChar; // The whole source. Kept so that text can be sliced
+                          // out from the byte range of identifiers etc.
+                          // (ts_node_string only returns a parenthesized
+                          // S-expression, so when the actual token text is
+                          // needed it must be sliced from the source bytes
+                          // by hand)
   public
     procedure Report(const RuleId, Message: string; const Node: TSNode);
     property Diagnostics: specialize TList<TDiagnostic> read FDiagnostics;
   end;
 ```
 
-`ts_node_string` はS式のデバッグ表現しか返さないため、識別子名や文字列リテラルの実際のテキストが必要なルール（命名規則チェック、シークレット文字列検知など）は `ts_node_start_byte`/`ts_node_end_byte`（`api.h` に実在、`TSBindings.pas` への追加が必要）でソースバイト列から部分文字列を切り出す方式にします。（担当: Sonnet5）
+Since `ts_node_string` only returns a debug S-expression representation, rules that need the actual text of an identifier name or string literal (naming-convention checks, secret-string detection, etc.) will slice a substring out of the source byte sequence using `ts_node_start_byte`/`ts_node_end_byte` (these exist in `api.h` and need to be added to `TSBindings.pas`). (Owner: Sonnet5)
 
-### 1.6 実行フロー（擬似コード）
+### 1.6 Execution Flow (pseudocode)
 
 ```
-for each 対象ファイル in CLIで指定されたパス:
-  Source := ファイル読み込み
+for each target file in the paths given on the CLI:
+  Source := read the file
   Tree := ts_parser_parse_string(...)
   Root := ts_tree_root_node(Tree)
-  Ctx := TLintContext.Create(ファイル名, Source)
-  WalkTree(Root, Ctx)          // RuleRegistryのディスパッチテーブルを引いて各ルールのCheckを呼ぶ
+  Ctx := TLintContext.Create(file name, Source)
+  WalkTree(Root, Ctx)          // looks up RuleRegistry's dispatch table and calls each rule's Check
   AllDiagnostics += Ctx.Diagnostics
   ts_tree_delete(Tree)
 
-出力フォーマッタに AllDiagnostics を渡して出力（5節参照）
-ExitCode := AllDiagnostics が空でなければ 1、空なら 0
+Pass AllDiagnostics to the output formatter and print (see section 4)
+ExitCode := 1 if AllDiagnostics is non-empty, 0 if empty
 ```
 
-（担当: Sonnet5）
+(Owner: Sonnet5)
 
-## 2. 5つの問題点ごとの検知方針
+## 2. Detection Approach per Problem (of the Five)
 
-### 2.1 一貫性のムラ（命名規則・エラーハンドリングの不統一）
+### 2.1 Inconsistency (naming conventions, inconsistent error handling)
 
-- **検知できる部分**: 固定の命名規則（型名は `T` プレフィックス、フィールドは `F` プレフィックス等）は `declType`/`declField`/`declProc` 等のノードから識別子名を取り出し、正規表現的なパターンと突き合わせるだけで検知できます。ただし「何が正しい規則か」はプロジェクトごとに違うため、規則自体はハードコードせず設定ファイル（後述）で定義できるようにする必要があります。
-- **検知が難しい部分**: 「セッションを跨ぐとエラーハンドリングの流儀がブレる」という本来の問題は、*同じ意味的な操作*を複数箇所で行った際に、ある箇所は `try-except` で保護し別の箇所は素通しにしている、という**ファイル横断・意味的な比較**です。tree-sitter は個々の構文木しか見せてくれず、「この2つの `exprCall` が意味的に同種の操作である」という判断はできません。妥協案として、同一ファイル内で「特定の呼び出しパターン（例: `Assign`/`Reset`/`Rewrite` などのファイルI/O系呼び出し）が `try` ブロックの中にあるか外にあるか」の構文的な有無だけを見て、同一ファイル内での混在を検知することは可能です（意味の同一性は判定せず、あくまで表面上のAPI呼び出し名の一致で近似する、緩い実装）。これはCLAUDE.mdルール8の「false positive回避のための緩め実装」に該当するため、実装時はその理由をコメントに残すこと。
-- セッション（コミット）を跨いだ命名規則ドリフトの検出（例: 過去のコミットと比べて命名が変わった）は、単一ファイルの構文解析の範囲外（git blame等の履歴情報が必要）であり、本設計では扱いません。「8. 未決事項」に発展案として記載します。
+- **What can be detected**: fixed naming conventions (type names prefixed with `T`, fields prefixed with `F`, etc.) can be detected just by pulling identifier names out of nodes like `declType`/`declField`/`declProc` and matching them against regex-like patterns. However, since "what the correct convention is" varies by project, the conventions themselves must not be hardcoded — they need to be definable via a config file (described later).
+- **What's hard to detect**: the actual underlying problem — "error-handling conventions drift across sessions" — is a **cross-file, semantic comparison**: when the *same semantic operation* is performed in multiple places, one site wraps it in `try-except` while another leaves it bare. tree-sitter only shows individual syntax trees and cannot judge "these two `exprCall`s are semantically the same kind of operation." As a compromise, it is possible to detect mixing *within a single file* by looking only at the syntactic presence or absence of "a specific call pattern (e.g. file-I/O calls like `Assign`/`Reset`/`Rewrite`) inside vs. outside a `try` block" — this doesn't judge semantic sameness, it's a loose approximation based purely on matching surface-level API call names. This falls under CLAUDE.md rule 8's "loosened implementation to avoid false positives", so the reasoning must be documented in a comment at implementation time.
+- Detecting naming-convention drift across sessions (commits) — e.g., naming changed compared to a past commit — is out of scope for single-file syntax analysis (it would need history information like `git blame`) and is not addressed by this design. It is noted as a possible future extension in "7. Open Questions".
 
-### 2.2 過剰な防御的コーディング
+### 2.2 Excessive Defensive Coding
 
-- **検知できる部分（低リスク）**:
-  - 空の `except` ハンドラ（例外を握りつぶして何もしない）: `exceptionHandler`/`exceptionElse` の `body`/`children` が実質空、または単なる `;` のみ。これは「防御的コーディングのやりすぎ」であると同時に「セキュリティ考慮漏れ」（エラーを握りつぶして異常を隠蔽する）の両方に該当する、汎用性の高いパターンです。
-  - オブジェクト生成直後の無意味な nil チェック: `Obj := TFoo.Create(...)` の直後の文が `if Assigned(Obj) then` である場合。Pascal のコンストラクタは（例外を送出しない限り）nil を返さないため、この直後チェックは常に真になり無意味です。ただし「直後」の判定は同一 `statements` 内で隣接する文に限定し、間に他の処理が挟まる場合は対象外とする等、狭いスコープに留めて誤検知を避けます。
-- **検知が困難な部分**: 「求められていないエッジケース処理を大量に追加している」かどうかは、そもそも何が「求められている」仕様かを rawpaco は知り得ません（要求仕様は自然言語のIssueやPRの説明に存在し、構文木には現れません）。これは意味論的な要否判断であり、構文解析だけでは原理的に検知不可能です。本設計では「意味に関わらず常に安全に指摘できる具体的パターン」（上記2つ）にスコープを絞り、「防御的コーディングの量」のような統計的・曖昧な指標は採用しません。
+- **What can be detected (low risk)**:
+  - Empty `except` handlers (an exception is swallowed and nothing happens): the `body`/`children` of `exceptionHandler`/`exceptionElse` are effectively empty, or just a bare `;`. This is a broadly useful pattern that falls under both "excessive defensive coding" and "overlooked security" (swallowing an error hides the underlying anomaly) at once.
+  - A meaningless nil check right after object construction: the statement immediately after `Obj := TFoo.Create(...)` is `if Assigned(Obj) then`. Since Pascal constructors never return nil (unless they raise an exception), this immediate check is always true and pointless. To avoid false positives, "immediately after" is restricted to an adjacent statement within the same `statements` block — if anything intervenes, it's excluded.
+- **What's difficult to detect**: whether code "adds a large amount of edge-case handling that wasn't asked for" is something rawpaco fundamentally cannot know, since it has no access to what was actually "asked for" (requirements live in natural-language issues or PR descriptions, not in the syntax tree). This is a semantic necessity judgment that is, in principle, undetectable by syntax analysis alone. This design narrows scope to "concrete patterns that can always be safely flagged regardless of meaning" (the two above) and does not adopt vague statistical measures like "amount of defensive coding".
 
-### 2.3 依存関係の楽観性（hallucination）
+### 2.3 Dependency Optimism (Hallucination)
 
-これが5つの中で最も構文解析だけでは対処が難しい問題です。
+Of the five, this is the hardest to address with syntax analysis alone.
 
-- **原理的にできないこと**: 「このユニット・この関数は実在するか」を一般的に判定すること。tree-sitter-pascal はシンボルテーブルも型情報も持たず、rawpaco自身もネットワーク越しのパッケージレジストリ照会は行いません（オフラインでも動くツールであるべき、というCI用途からの要請とも合致します）。
-- **実際に多くのケースは既にCIの `make`（`fpc` によるコンパイル）で捕捉される**: 存在しない識別子・引数の型不一致は、コンパイルエラーとしてCIが既に検知しています。したがって rawpaco が担うべきなのは「コンパイルは通るが、実在するAPIの中から明後日の方向のものを選んでいる」ような、コンパイラでは検知できないケースに絞るのが現実的です。
-- **代替案（部分的に実現可能）**:
-  1. **FPC標準ユニットのシンボル一覧をバンドルする**: pin している FPC バージョンの `fpc-source` から、`SysUtils`/`Classes` 等の主要ユニットが公開する識別子一覧を抽出し、`data/fpc-rtl-symbols.json` のような形でバージョン付きでリポジトリに同梱します（tree-sitter-pascalのバージョン固定方針＝CLAUDE.mdルール2と同じ発想）。対象コードの `declUses` から取得したユニット名が、このバンドル済みリストに載っている既知ユニットである場合に限り、`exprDot`（`SysUtils.Foo` 形式）や `uses` 経由で見える裸の識別子呼び出しが当該ユニットのシンボル一覧に存在するかを突き合わせます。一致しなければ「バンドルされたSysUtils/Classes等には存在しない識別子」として警告します。
-     - この方式は **RTL/FCLの既知ユニットに限定**され、ユーザー定義の型・クラスや、サードパーティパッケージ（Indy, mORMot等）は対象外です（そもそもこれらのソースを同梱するのは非現実的）。「サードパーティAPIの引数名の思い違い」のような、依頼文で挙げられた具体例の中心的なケースは、この方式ではカバーできないことを明記しておきます。
-     - スコープ解決を行わない以上、`uses` に複数ユニットがある場合の名前解決の優先順位（後方のユニットが前方を隠す等）は正確に再現できません。「`uses` されているいずれのユニットのシンボル一覧にも見当たらない」場合のみ警告する、片方向の緩い実装とし、誤検知の芽を摘みます。
-     - シンボル一覧の抽出パイプライン（`fpc-source` のPascalソースをパースしてシンボル名を抜き出す）自体の設計、フォーマットの決定、名前解決の緩め方の設計は難易度が高いため **担当: Opus5**。
-  2. **「よくある幻覚APIのブロックリスト」を手動で育てる**: 実際に観測された「もっともらしいが存在しないFPC API名」（例: `TStringHelper.Contains` を FPC で使えると誤認する、等）を小さなリストとして蓄積し、完全一致で検知する方式。メンテナンスコストは低いが網羅性も低い、現実的な妥協案です。（担当: Sonnet5。ただし初期リストに何を載せるかの判断は人間/Opusのレビューを推奨）
-- 依頼文にある「マイナーなライブラリやAPIの細かい引数名」レベルの誤りは、型・引数リスト解決が必須であり、本設計のスコープでは**検知できません**と明記します。
+- **What's impossible in principle**: generically determining "does this unit/function actually exist?" tree-sitter-pascal has neither a symbol table nor type information, and rawpaco itself does not query package registries over the network (which also matches the requirement, from its CI use case, that it should work offline).
+- **In practice, many cases are already caught by CI's `make` (compilation via `fpc`)**: nonexistent identifiers and argument-type mismatches are already caught by CI as compile errors. So it's realistic for rawpaco to focus on cases the compiler cannot catch — code that compiles fine but picks a real, existing API that's simply the wrong one for the job.
+- **Alternative approaches (partially achievable)**:
+  1. **Bundle a symbol list for FPC's standard units**: extract the list of identifiers publicly exposed by major units like `SysUtils`/`Classes` from the `fpc-source` of the pinned FPC version, and ship it in the repository, version-tagged, as something like `data/fpc-rtl-symbols.json` (the same idea as pinning the tree-sitter-pascal version — CLAUDE.md rule 2). Whenever a unit name obtained from a target file's `declUses` is a known unit in this bundled list, cross-check whether a bare identifier call reached via `exprDot` (`SysUtils.Foo` style) or via `uses` actually exists in that unit's symbol list. If it doesn't match, flag it as "an identifier that doesn't exist in the bundled SysUtils/Classes/etc."
+     - This approach is **limited to known RTL/FCL units**; user-defined types/classes and third-party packages (Indy, mORMot, etc.) are out of scope (bundling their sources would be impractical to begin with). Note explicitly that this approach cannot cover the central example given in the original request — "mistaken argument names for a minor third-party API."
+     - Since no scope resolution is performed, this cannot accurately reproduce name-resolution precedence when `uses` lists multiple units (e.g. a later unit shadowing an earlier one). To keep false positives down, this uses a one-directional, loose implementation that only warns when "the identifier isn't found in the symbol list of *any* of the used units."
+     - Designing the symbol-extraction pipeline itself (parsing `fpc-source`'s Pascal sources to pull out symbol names), deciding the format, and designing how loose the name resolution should be, are all high-difficulty tasks, so **Owner: Opus5**.
+  2. **Manually grow a "known-hallucinated API blocklist"**: accumulate a small list of "plausible-sounding but nonexistent FPC API names" actually observed in the wild (e.g., someone mistakenly believing `TStringHelper.Contains` is available in FPC), and detect them by exact match. Low maintenance cost, low coverage — a pragmatic compromise. (Owner: Sonnet5, though a human/Opus review is recommended for deciding what goes in the initial list)
+- Errors at the level of "fine-grained argument names for minor libraries/APIs," as mentioned in the original request, require type and argument-list resolution, and are explicitly stated to be **undetectable** within the scope of this design.
 
-### 2.4 セキュリティ考慮漏れ
+### 2.4 Overlooked Security
 
-- 依頼文の例示（IAMポリシーの広さ）は、クラウドインフラ定義（IaC）を対象とした例であり、デスクトップ/サーバサイドPascalコードにはそのまま適用できません。Pascalの文脈で構文的に安全に検知できる代替パターンとして、以下2つに絞ります。
-  1. **SQL文字列連結パターン**: `exprBinary` で `operator` が `+`（文字列連結）、`lhs`/`rhs` の一方が `literalString` でSQLキーワード（`SELECT`/`INSERT`/`UPDATE`/`DELETE`/`WHERE`/`FROM` 等、大文字小文字を無視）を含み、もう一方が `literalString` 以外（つまり変数や式）である場合に警告します。これは他言語向けの静的解析ツール（例: BanditのB608）でも採用されている実績のあるヒューリスティックです。パラメータ化クエリ（`Params.ParamByName(...).AsString := X` のような形）は連結を伴わないため誤検知しません。
-  2. **シークレットらしき文字列のハードコード**: `varDef`/`declVar`/`declConst`/`assignment` の左辺識別子名が `password`/`secret`/`apikey`/`api_key`/`token`/`connectionstring` 等のパターン（大文字小文字無視、部分一致）にマッチし、右辺が空でない `literalString` である場合に警告します。`CHANGE_ME`/`YOUR_API_KEY_HERE`/空文字列のような明らかなプレースホルダは除外し、誤検知を抑えます（除外パターンは初期実装では固定の短いリストとし、将来設定ファイルで追加可能にする余地を残す）。
-  3. **例外の握りつぶし**（2.2で既出）もセキュリティ観点（異常の隠蔽）から二重に位置づけられます。カテゴリとしては `RAWPACO-DEFENSE-*` を主としつつ、設計書上はセキュリティの一側面としても扱います。
+- The example given in the original request (overly broad IAM policies) targets cloud infrastructure definitions (IaC) and doesn't directly apply to desktop/server-side Pascal code. As syntactically-safe alternative patterns detectable in a Pascal context, this narrows down to the following two:
+  1. **SQL string-concatenation pattern**: warn when an `exprBinary`'s `operator` is `+` (string concatenation), one of `lhs`/`rhs` is a `literalString` containing a SQL keyword (`SELECT`/`INSERT`/`UPDATE`/`DELETE`/`WHERE`/`FROM`, etc., case-insensitive), and the other side is anything other than a `literalString` (i.e. a variable or expression). This is a proven heuristic also adopted by static analysis tools for other languages (e.g. Bandit's B608). Parameterized queries (in the form `Params.ParamByName(...).AsString := X`) don't involve concatenation, so they're not falsely flagged.
+  2. **Hardcoded secret-looking strings**: warn when the left-hand identifier name of a `varDef`/`declVar`/`declConst`/`assignment` matches a pattern like `password`/`secret`/`apikey`/`api_key`/`token`/`connectionstring` (case-insensitive, substring match) and the right-hand side is a non-empty `literalString`. Obvious placeholders like `CHANGE_ME`/`YOUR_API_KEY_HERE`/an empty string are excluded to curb false positives (the exclusion list is a small fixed list in the initial implementation, leaving room to make it configurable later).
+  3. **Swallowed exceptions** (already covered in 2.2) also count, doubly, from a security angle (hiding an anomaly). Its category is primarily `RAWPACO-DEFENSE-*`, but this design doc also treats it as one facet of security.
 
-### 2.5 古い書き方（学習データに引っ張られた非推奨API等）
+### 2.5 Outdated Practices (Deprecated APIs from Stale Training Data, etc.)
 
-- CLAUDE.md ルール1自体が、rawpaco開発時のこの問題への対処（freepascal.orgでの事前確認）になっていますが、ここでは**rawpacoが解析する対象コード側**の古い書き方を検知する話です。
-- FPCのRTL/FCLソースは、非推奨の識別子に `deprecated;` または `deprecated 'メッセージ';` という言語標準のディレクティブを付与していることが多く、tree-sitter-pascalの文法にも `kDeprecated` トークンが存在します（`node-types.json` で確認済み）。これを利用し、2.3のRTLシンボル抽出パイプラインを拡張して「`deprecated` 付きの識別子一覧」も同時に抽出し、対象コードがそれらを呼び出している場合に警告する、という設計が自然です。抽出元となる `fpc-source` パッケージのバージョンは、CI環境のFPCバージョンと一致させ、pin方針（CLAUDE.mdルール2に準じる発想）で管理します。
-- 対象コード自身が宣言した手続き・関数に `deprecated` を付けているのに、同一ファイル内で普通に呼び出し続けているケース（自己矛盾）は、追加のシンボル抽出なしに構文木だけで検知できます（`declProc` の `attribute` に `procAttribute` 経由で `kDeprecated` があるかを見て、その識別子名を同一ファイル内の `exprCall` の `entity` と突き合わせるだけ）。これは低コストで実装できる副産物です。
-- 「最新のベストプラクティス」（例: 新しいFPCバージョンで追加された、より安全な代替APIがあるという情報）は、非推奨マークが付いていないケースでは検知できません（deprecatedディレクティブが付与されていない「暗黙的に古い」書き方は対象外）。
+- CLAUDE.md rule 1 itself is rawpaco's own countermeasure against this problem during its own development (checking freepascal.org beforehand); this section is about detecting outdated practices in **the code rawpaco analyzes**.
+- FPC's RTL/FCL sources often mark deprecated identifiers with the language-standard `deprecated;` or `deprecated 'message';` directive, and tree-sitter-pascal's grammar has a corresponding `kDeprecated` token (confirmed in `node-types.json`). The natural design is to extend the RTL symbol-extraction pipeline from 2.3 to also extract "the list of identifiers marked `deprecated`" at the same time, and warn when target code calls one of them. The version of the `fpc-source` package used as the extraction source is kept in sync with the CI environment's FPC version, managed under a pinning policy (the same idea as CLAUDE.md rule 2).
+- The case where target code marks its own declared procedure/function as `deprecated` yet keeps calling it normally within the same file (self-contradiction) can be detected purely from the syntax tree, with no extra symbol extraction needed (just check whether a `declProc`'s `attribute` has `kDeprecated` via `procAttribute`, and cross-check that identifier name against the `entity` of `exprCall`s in the same file). This is a low-cost byproduct to implement.
+- "Current best practice" (e.g., information that a newer FPC version added a safer alternative API) cannot be detected in cases that aren't marked deprecated (an "implicitly outdated" style with no `deprecated` directive attached is out of scope).
 
-### 2.6 まとめ表
+### 2.6 Summary Table
 
-| # | 問題点 | 構文解析だけで検知できるか | 採用する代替・スコープ |
+| # | Problem | Detectable by syntax analysis alone? | Adopted fallback / scope |
 |---|---|---|---|
-| 1 | 一貫性のムラ | 命名規則は○（要設定ファイル）。エラーハンドリングの意味的一貫性は×（ファイル内・表面API一致に限定した近似のみ） | 2.1参照 |
-| 2 | 過剰な防御的コーディング | 「量」の判定は×。特定の無意味パターン（空except、生成直後nilチェック）は○ | 2.2参照 |
-| 3 | hallucination | 一般的な実在確認は×（型・レジストリ情報が必要）。RTL/FCLの既知シンボルとの突き合わせは部分的に○ | 2.3参照。サードパーティAPIは対象外 |
-| 4 | セキュリティ考慮漏れ | 依頼例（IAM）はPascalに非該当。SQL連結・シークレット直書きは○ | 2.4参照 |
-| 5 | 古い書き方 | `deprecated` マーク付きAPIの使用は○。マークなしの暗黙的な古さは× | 2.5参照 |
+| 1 | Inconsistency | Naming conventions: yes (needs config file). Semantic consistency of error handling: no (only a same-file, surface-API-match approximation) | See 2.1 |
+| 2 | Excessive defensive coding | Judging "amount": no. Specific pointless patterns (empty except, nil check right after construction): yes | See 2.2 |
+| 3 | Hallucination | General existence-checking: no (needs type/registry info). Cross-checking against known RTL/FCL symbols: partially yes | See 2.3. Third-party APIs out of scope |
+| 4 | Overlooked security | The original example (IAM) doesn't apply to Pascal. SQL concatenation / hardcoded secrets: yes | See 2.4 |
+| 5 | Outdated practices | Usage of APIs marked `deprecated`: yes. Implicit staleness with no mark: no | See 2.5 |
 
-## 3. positive/negativeサンプルの配置・実行方法
+## 3. Placement and Execution of positive/negative Samples
 
-CLAUDE.mdルール3（positive/negative両方必須）との整合のため、以下の規約とします（`tests/README.md` にも要点を追記済み）。
+To stay consistent with CLAUDE.md rule 3 (both positive and negative required), the following convention is adopted (the key points are also noted in `tests/README.md`).
 
-- 配置: `tests/positive/<RuleId>/*.pas`、`tests/negative/<RuleId>/*.pas`。1ルールにつき複数ファイル可（バリエーションごとに増やす）。
-- 実行方法: `tests/run_tests.sh`（新設）を用意し、以下を行う。
-  1. `tests/negative/<RuleId>/` の各 `.pas` について `./src/rawpaco <file>` を実行し、出力に `<RuleId>` が含まれることを確認する（含まれなければテスト失敗）。
-  2. `tests/positive/<RuleId>/` の各 `.pas` について同様に実行し、出力に `<RuleId>` が**含まれないこと**を確認する（含まれればテスト失敗＝誤検知）。
-  3. `Makefile` に `test` ターゲットを追加し `make test` で一括実行できるようにする。CI（`.github/workflows/ci.yml`）の `build-linux`/`build-windows` 双方に `make test`（またはWindows側は対応するシェルコマンド）のステップを追加する。
-- シェルスクリプトを選ぶ理由: FPC用の単体テストフレームワーク（fpcunit等）を導入する選択肢もありますが、rawpaco自体がCLIとして完結しており、入出力（終了コード・標準出力の文字列マッチ）で十分検証できるため、依存を増やさずCI上のbashで完結する方式を採ります。将来ルール数が増えてアサーションが複雑化した場合はfpcunit移行を検討してよい、という含みを残します。（担当: Sonnet5）
+- Placement: `tests/positive/<RuleId>/*.pas`, `tests/negative/<RuleId>/*.pas`. Multiple files per rule are fine (add more as variations come up).
+- Execution: set up a new `tests/run_tests.sh` that does the following.
+  1. For each `.pas` under `tests/negative/<RuleId>/`, run `./src/rawpaco <file>` and confirm the output contains `<RuleId>` (fail the test if it doesn't).
+  2. For each `.pas` under `tests/positive/<RuleId>/`, run the same and confirm the output **does not** contain `<RuleId>` (fail the test if it does — i.e. a false positive).
+  3. Add a `test` target to the `Makefile` so `make test` runs everything at once. Add a `make test` step (or the equivalent shell command on the Windows side) to both `build-linux`/`build-windows` in CI (`.github/workflows/ci.yml`).
+- Why a shell script: introducing a unit-testing framework for FPC (fpcunit etc.) was an option, but since rawpaco is a self-contained CLI and its I/O (exit code, stdout string matching) is enough to verify it, this adopts a self-contained bash-on-CI approach with no added dependency. This leaves the door open to migrating to fpcunit later if the number of rules grows and assertions get more complex. (Owner: Sonnet5)
 
-## 4. 診断結果の出力形式
+## 4. Diagnostic Output Format
 
-**実装状況の注記（2026-08-04、レビューで判明）**: 本節で設計した `--format` オプション・`github`/`json` 出力・末尾の「インライン抑制コメント」（`// rawpaco:ignore`）は、P1〜P9・`--only`/`--exclude` の実装完了時点でもいずれも未実装のままである。実際に実装されているのは `text` 形式のみ（`src/Diagnostics.pas` の `FormatDiagnosticText`）で、`src/rawpaco.lpr` が受け付けるオプションは `--config`/`--only`/`--exclude` のみ。詳細はHANDOFF.mdの「未着手・保留中」を参照。
+**Implementation status note (2026-08-04, found during review)**: the `--format` option, `github`/`json` output, and the "inline suppression comment" (`// rawpaco:ignore`) designed in this section all remain unimplemented, even after P1–P9 and `--only`/`--exclude` were completed. The only format actually implemented is `text` (`src/Diagnostics.pas`'s `FormatDiagnosticText`), and the only options `src/rawpaco.lpr` accepts are `--config`/`--only`/`--exclude`. See HANDOFF.md's "Not yet started / pending" section for details.
 
-GitHub Actions上での利用を主眼に、以下の3形式をサポートします（`--format` オプション、デフォルトは `text`）。
+With GitHub Actions usage as the primary target, the following three formats are supported (via a `--format` option, defaulting to `text`).
 
-- `text`（デフォルト、人間可読）: `<ファイル名>:<行>:<列>: warning: <メッセージ> [<RuleId>]`（gcc/eslint系に倣った形式）
-- `github`: GitHub Actions のワークフローコマンド形式 `::warning file=<ファイル名>,line=<行>,col=<列>::[<RuleId>] <メッセージ>` を1行ずつ出力する。これによりPRの差分表示に直接インライン注釈が付く。
-- `json`: `[{"ruleId":..,"file":..,"line":..,"column":..,"severity":..,"message":..}, ...]` の配列。他ツールとの連携・将来のGitHub Annotations API連携等を見込んだ機械可読形式。
+- `text` (default, human-readable): `<file>:<line>:<column>: warning: <message> [<RuleId>]` (a format modeled on gcc/eslint-style tools)
+- `github`: emits one line per diagnostic in GitHub Actions' workflow-command format, `::warning file=<file>,line=<line>,col=<column>::[<RuleId>] <message>`. This attaches inline annotations directly to the PR diff view.
+- `json`: an array of `[{"ruleId":..,"file":..,"line":..,"column":..,"severity":..,"message":..}, ...]`. A machine-readable format anticipating integration with other tools and, potentially, the GitHub Annotations API in the future.
 
-**終了コード**: 診断が1件でもあれば `1`、0件なら `0`。CLAUDE.mdルール5（false positive回避優先）の裏返しとして、いったんルールとして採用したものは「警告＝要修正」という強いシグナルにする方針とし、warning/errorの重み付けによる終了コード制御（例: warningなら通す）は当面導入しません（重要度別の閾値制御は将来の拡張候補として8節に記載）。
+**Exit code**: `1` if there is even a single diagnostic, `0` if there are none. As the flip side of CLAUDE.md rule 5 (prioritize avoiding false positives), the policy is that once something has been adopted as a rule, "warning = needs fixing" is meant to be a strong signal; exit-code control weighted by warning/error severity (e.g. letting warnings through) is not introduced for now (severity-based threshold control is noted as a future extension candidate in section 7).
 
-**インライン抑制コメント**: 個別の誤検知・意図的な例外に対応するため、対象行または直前行に `// rawpaco:ignore <RuleId>` があれば、その行に関するその `RuleId` の診断を抑制します。false positiveをゼロにはできない前提（CLAUDE.mdルール5はあくまで「回避を優先する」であり保証ではない）に立ち、CIをブロックするツールとして運用可能にするための逃げ道として必須と判断しました。抑制コメントを使う場合は「なぜ抑制するか」のコメントも併記することを推奨する運用ルールとし、これは将来 `README.md`/`CLAUDE.md` に追記を検討してよい項目です（本設計書では提案に留める）。（担当: Sonnet5）
+**Inline suppression comment**: to handle individual false positives and deliberate exceptions, if `// rawpaco:ignore <RuleId>` appears on the target line or the line immediately before it, the diagnostic for that `RuleId` on that line is suppressed. Working from the premise that false positives can never be reduced to zero (CLAUDE.md rule 5 says "prioritize avoiding," not "guarantee"), this was judged essential as an escape hatch so the tool can realistically be run as a CI blocker. The recommended operating rule when using a suppression comment is to also note "why it's being suppressed"; this is something that could be added to `README.md`/`CLAUDE.md` in the future (this design doc only proposes it). (Owner: Sonnet5)
 
-## 5. 自己lint組み込みへの道筋（鶏卵問題）
+## 5. Path to Integrating Self-Linting (the Chicken-and-Egg Problem)
 
-CLAUDE.mdルール4「本ツール自身のソースをlintし警告ゼロを維持するCIステップを追加する」は、ルールが1つも無い現状ではCIに追加しようがありません（HANDOFF.mdの現状記載どおり）。以下の順序で解消します。
+CLAUDE.md rule 4 — "add a CI step that lints the tool's own source and keeps it at zero warnings" — cannot yet be added to CI while there isn't a single rule (as HANDOFF.md's current notes say). This is resolved in the following order.
 
-1. ルール第1号（7節の優先順位に従う）を実装し、positive/negativeサンプルで動作確認する。
-2. **ローカルで** `./src/rawpaco src/*.pas` を実行し、rawpaco自身のソースに対して誤検知・真陽性がないか確認する。
-   - 真陽性（本当に直すべき箇所）が見つかった場合は、CLAUDE.mdルール8に従い理由コメントを残しつつ修正する。
-   - 誤検知の場合はルール自体のロジックを見直す（安易に4節の抑制コメントで揉み消さない。抑制コメントは「意図的な例外」のためのものであり、ルールのバグを隠すためのものではない）。
-3. 手順2でクリーンになったことを確認できたルールから順に、CI（`.github/workflows/ci.yml`）の `build-linux`/`build-windows` 両ジョブに「自身のソースをlintし、終了コードが0であることを確認する」ステップを追加する。1ルールも無い状態から全ルール分をまとめて待つ必要はなく、クリーンになったルールから漸進的に自己lint対象に加えてよい（例えば `rawpaco --only=RAWPACO-SEC-001 src/*.pas` のような特定ルールのみ有効化するオプションを用意し、自己lintの対象範囲を明示的にコントロールする）。
-4. 全ルールが自己lintをクリアした段階で `--only` 指定を外し、フルセットでの自己lintに移行する。
-5. HANDOFF.mdの「自己lint到達状況」セクションを、各ステップの進捗に合わせて都度更新する。
+1. Implement the first rule (following the priority order in section 7) and verify it with positive/negative samples.
+2. **Locally**, run `./src/rawpaco src/*.pas` and check rawpaco's own source for false positives/true positives.
+   - If a true positive (something that genuinely should be fixed) is found, fix it while leaving a reason comment per CLAUDE.md rule 8.
+   - If it's a false positive, revisit the rule's own logic (don't casually paper over it with a section-4 suppression comment — suppression comments are for "deliberate exceptions," not for hiding a bug in the rule).
+3. In order, for each rule confirmed clean in step 2, add a step to both the `build-linux`/`build-windows` jobs in CI (`.github/workflows/ci.yml`) that "lints its own source and confirms the exit code is 0." There's no need to wait until all rules are done starting from zero rules — clean rules can be added to the self-lint target incrementally (e.g., by providing an option like `rawpaco --only=RAWPACO-SEC-001 src/*.pas` that enables only a specific rule, to explicitly control the scope of self-linting).
+4. Once all rules pass self-linting, drop the `--only` restriction and move to self-linting against the full set.
+5. Update HANDOFF.md's "Self-lint progress" section each time, in step with progress on each of the above.
 
-`--only`/`--exclude` オプションはこの漸進導入のために必須と判断し、7節のルール実装と合わせて早期に用意することを推奨します。（担当: Sonnet5）
+`--only`/`--exclude` options were judged essential for this incremental rollout, and it's recommended they be prepared early, alongside the rule implementations in section 7. (Owner: Sonnet5)
 
-## 6. 実装優先順位と最初の数個のルール具体案
+## 6. Implementation Priority and Concrete Proposals for the First Several Rules
 
-false positive回避のしやすさ・実装の単純さ・価値の高さで優先順位付けしました。P1〜P3は構文パターンのみで完結し高い確度で安全、P4以降は設定ファイルやデータパイプラインなど追加の設計要素を要します。
+Prioritized by how easy it is to avoid false positives, implementation simplicity, and value. P1–P3 are self-contained syntactic patterns that are safe with high confidence; P4 onward requires additional design elements such as config files or data pipelines.
 
-### P1: RAWPACO-DEFENSE-001 空のexceptハンドラ（例外の握りつぶし）
+### P1: RAWPACO-DEFENSE-001 Empty except handler (swallowed exception)
 
-- 検知対象: `exceptionHandler`/`exceptionElse` の本体が実質空（`;` のみ、または子ノードが無い）。
-- 該当する問題点: 2番目（過剰防御）と4番目（セキュリティ・異常の隠蔽）の両方。
-- 誤検知リスク: 低い（意図的にログ出力すらしない空catchは、ほぼ常に見直すべきコード）。
-- 担当: Sonnet5
+- Detection target: the body of `exceptionHandler`/`exceptionElse` is effectively empty (just `;`, or no child nodes).
+- Corresponding problem(s): both #2 (excessive defensiveness) and #4 (security — hiding an anomaly).
+- False-positive risk: low (a deliberately silent catch block that doesn't even log is almost always code that should be revisited).
+- Owner: Sonnet5
 
-### P2: RAWPACO-SEC-001 SQL文字列連結パターン
+### P2: RAWPACO-SEC-001 SQL string-concatenation pattern
 
-- 検知対象: 2.4節1参照。`exprBinary` の `+` 演算子で片側がSQLキーワードを含む `literalString`、もう片側が非リテラル。
-- 誤検知リスク: 中程度（SQLに見えるが実際はログメッセージ等の文字列連結を拾う可能性）。キーワードは行頭または単語境界での一致に限定し、`WHERE`/`SELECT`等の一般的すぎない語のみを対象にする等のチューニングが要る。
-- 担当: Sonnet5
+- Detection target: see 2.4 item 1. An `exprBinary`'s `+` operator where one side is a `literalString` containing a SQL keyword and the other is not a literal.
+- False-positive risk: moderate (may pick up string concatenation that merely looks like SQL, e.g. a log message). Requires tuning such as matching keywords at word boundaries and limiting the keyword list to ones that aren't overly generic, like `WHERE`/`SELECT`.
+- Owner: Sonnet5
 
-### P3: RAWPACO-SEC-002 シークレットらしき文字列のハードコード
+### P3: RAWPACO-SEC-002 Hardcoded secret-looking strings
 
-- 検知対象: 2.4節2参照。
-- 誤検知リスク: 中程度（プレースホルダ除外リストのチューニングが必要）。
-- 担当: Sonnet5
+- Detection target: see 2.4 item 2.
+- False-positive risk: moderate (the placeholder exclusion list needs tuning).
+- Owner: Sonnet5
 
-### P4: RAWPACO-DEPR-001 自己矛盾する非推奨API使用（同一ファイル内）
+### P4: RAWPACO-DEPR-001 Self-contradictory deprecated-API usage (within the same file)
 
-- 検知対象: 2.5節の「対象コード自身が宣言した`deprecated`手続きを同一ファイル内で呼び続けている」ケース。外部データ不要で構文木のみで完結する。
-- 誤検知リスク: 低い。
-- 担当: Sonnet5
+- Detection target: the case from 2.5 where target code keeps calling its own `deprecated`-declared procedure within the same file. Self-contained via the syntax tree alone, no external data needed.
+- False-positive risk: low.
+- Owner: Sonnet5
 
-### P5: RAWPACO-STYLE-001 命名規則チェック（設定ファイルベース）
+### P5: RAWPACO-STYLE-001 Naming-convention check (config-file based)
 
-- 検知対象: 2.1節参照。型名の `T` プレフィックス、フィールドの `F` プレフィックス等。
-- 難しい点: 「規則をどう表現するか」（正規表現ベースか、プレフィックス/サフィックスの宣言的な指定か）、規則が指定されていないプロジェクトでのデフォルト値をどうするか、FPC/Lazarusコミュニティで広く合意されている規則とそうでない規則の線引きなど、曖昧な仕様判断を伴う。
-- 担当: **Opus5**（設定ファイルのスキーマ設計とデフォルト規則の選定。スキーマ確定後の機械的なAST照合部分はSonnet5でも実装可能）
+- Detection target: see 2.1. Type names prefixed `T`, fields prefixed `F`, etc.
+- What's hard: ambiguous specification judgment calls, such as how to express the rules (regex-based, or declarative prefix/suffix specification?), what defaults to use for a project that hasn't specified any rules, and where to draw the line between conventions that are broadly agreed upon in the FPC/Lazarus community and those that aren't.
+- Owner: **Opus5** (config-file schema design and default-rule selection. Once the schema is finalized, the mechanical AST-matching part can also be implemented by Sonnet5)
 
-### P6: RAWPACO-DEPR-002 FPC RTL/FCLの`deprecated`シンボル一覧に基づく検知
+### P6: RAWPACO-DEPR-002 Detection based on FPC RTL/FCL's list of `deprecated` symbols
 
-- 検知対象: 2.5節。`fpc-source` からの `deprecated` 識別子抽出パイプラインが前提。
-- 難しい点: 抽出パイプライン自体の設計（Pascalソースの簡易パース、対象ユニットの選定、バージョン管理・再生成手順、既存ルールへの影響確認をどう回すか）。
-- 担当: **Opus5**
+- Detection target: section 2.5. Premised on a pipeline that extracts `deprecated` identifiers from `fpc-source`.
+- What's hard: designing the extraction pipeline itself (lightweight parsing of Pascal sources, selecting target units, version management/regeneration procedure, how to vet the impact on existing rules).
+- Owner: **Opus5**
 
-### P7: RAWPACO-HALLUC-001 FPC RTL/FCLの既知シンボル一覧との突き合わせ
+### P7: RAWPACO-HALLUC-001 Cross-checking against FPC RTL/FCL's list of known symbols
 
-- 検知対象: 2.3節の代替案1。
-- 難しい点: シンボル一覧抽出パイプライン（P6と共有可能）に加え、`uses`節に基づく片方向の緩い名前解決ロジックの設計。
-- 担当: **Opus5**
+- Detection target: alternative approach 1 from 2.3.
+- What's hard: on top of the symbol-list extraction pipeline (shareable with P6), designing the one-directional, loose name-resolution logic based on the `uses` clause.
+- Owner: **Opus5**
 
-### P8: RAWPACO-DEFENSE-002 生成直後の無意味なnilチェック
+### P8: RAWPACO-DEFENSE-002 Meaningless nil check right after construction
 
-- 検知対象: 2.2節参照。
-- 誤検知リスク: 「直後」の範囲定義次第で変わる。最初は同一`statements`内で直接後続の文のみを対象にする狭いスコープから始める。
-- 担当: Sonnet5
+- Detection target: see 2.2.
+- False-positive risk: depends on how "immediately after" is scoped. Start narrow, with only the directly-following statement within the same `statements` block.
+- Owner: Sonnet5
 
-### P9: RAWPACO-STYLE-002 同一ファイル内でのエラーハンドリング不統一（近似）
+### P9: RAWPACO-STYLE-002 Inconsistent error handling within the same file (approximation)
 
-- 検知対象: 2.1節の「緩い近似」案（同種API呼び出しがtry保護されている箇所とされていない箇所の混在）。
-- 難しい点: 「同種API呼び出し」をどう定義するか（呼び出し名の完全一致に留めるか、`declUses`から見える特定ユニット由来の呼び出しに絞るか等）、および誤検知率の見積もり。
-- 担当: **Opus5**
+- Detection target: the "loose approximation" idea from 2.1 — a mix of call sites where the same kind of API call is try-protected in some places and not in others.
+- What's hard: how to define "the same kind of API call" (limit to exact call-name matches, or narrow it to calls reachable from specific units seen in `declUses`?), and estimating the false-positive rate.
+- Owner: **Opus5**
 
-## 7. 未決事項・提案（大きな方針転換になりうるもの・独断で決めていない事項）
+## 7. Open Questions / Proposals (things that could be major policy shifts, not decided unilaterally)
 
-以下は本レビューで気づいたものの、既存ルールの削除やスコープの大幅変更に相当するため、提案に留め、断行していません。
+The following were noticed during this review but amount to deleting existing rules or drastically changing scope, so they are left as proposals rather than decided outright.
 
-- **セッション（コミット履歴）を跨いだ命名規則・慣習ドリフトの検知**: 2.1節で述べた通り、単一ファイルの構文解析では原理的に扱えません。`git log`/`git blame`との連携や、複数ファイル・複数コミットにまたがる集計を行う「rawpaco拡張モード」を将来検討する余地はありますが、これは「静的解析ツール」から「リポジトリ解析ツール」への性格変化を伴うため、着手する場合は改めて設計判断が必要です。
-- **重要度別（warning/error）の終了コード制御**: 4節では単純化のため「診断1件でも終了コード1」としましたが、運用が進みルール数が増えた段階で「このルールは注意喚起のみでCIは落とさない」という段階的な重要度制御が欲しくなる可能性があります。現時点ではルールが0個のため必要性を判断できず、导入を見送っています。
-- **抑制コメント運用ルールのCLAUDE.md/README.mdへの明文化**: 4節で触れた「抑制コメントには理由を書く」という運用ルールは、CLAUDE.mdルール8（コメントは「なぜ」を残す）の精神に沿うものですが、CLAUDE.md自体への追記はルールの新設に相当するため、本セッションでは行わず提案に留めました。
-- **CLAUDE.mdルール1の適用範囲を「外部Cライブラリ全般」に広げる編集**（本セッションで実施済みの小修正とは別に、より踏み込んだ一般化）: 本セッションでは「tree-sitterのAPIも対象に含める」という最小限の明確化のみ行いました。将来、他の外部Cライブラリを追加する可能性が出てきた場合は、ルール文言をより一般化することを検討してください。
+- **Detecting naming-convention/idiom drift across sessions (commit history)**: as noted in 2.1, this is fundamentally out of reach for single-file syntax analysis. There's room to consider a future "rawpaco extended mode" that integrates with `git log`/`git blame` and aggregates across multiple files/commits, but this would change rawpaco's character from a "static analysis tool" to a "repository analysis tool," so it would need a fresh design decision if ever pursued.
+- **Severity-based (warning/error) exit-code control**: section 4 kept things simple with "exit code 1 for even one diagnostic," but as operation matures and the number of rules grows, there may be a desire for graduated severity control — "this rule is just a heads-up, don't fail CI for it." At the time of writing there are zero rules, so the need for this can't yet be judged, and introducing it is deferred.
+- **Writing the suppression-comment operating rule into CLAUDE.md/README.md**: the operating rule mentioned in section 4 — "write a reason when using a suppression comment" — is in the spirit of CLAUDE.md rule 8 (comments preserve the "why"), but adding to CLAUDE.md itself amounts to establishing a new rule, so this was left as a proposal rather than done in this session.
+- **Broadening CLAUDE.md rule 1's scope to "external C libraries in general"** (a further generalization beyond the small edit already made in this session): this session only made the minimal clarification that "tree-sitter's API is also covered." If the possibility of adding other external C libraries comes up in the future, consider generalizing the rule's wording further.
 
-## 8. 担当振り分け一覧（まとめ）
+## 8. Owner Assignment Summary
 
-| 項目 | 担当 |
+| Item | Owner |
 |---|---|
-| ASTWalker（走査ドライバ） | Sonnet5 |
-| TSBindings.pas 拡張（ノード走査系関数の追加） | Sonnet5 |
-| RuleRegistry・ルールインターフェース定義 | Sonnet5 |
-| Diagnostics（TDiagnostic、出力フォーマッタ text/github/json） | Sonnet5 |
-| 抑制コメント（`rawpaco:ignore`）機構 | Sonnet5 |
-| tests/run_tests.sh・Makefile `test`ターゲット | Sonnet5 |
-| `--only`/`--exclude` オプション | Sonnet5 |
-| P1 RAWPACO-DEFENSE-001（空except） | Sonnet5 |
-| P2 RAWPACO-SEC-001（SQL文字列連結） | Sonnet5 |
-| P3 RAWPACO-SEC-002（シークレット直書き） | Sonnet5 |
-| P4 RAWPACO-DEPR-001（自己矛盾deprecated使用） | Sonnet5 |
-| P5 RAWPACO-STYLE-001（命名規則、設定ファイルスキーマ） | **Opus5**（スキーマ・デフォルト規則） / Sonnet5（スキーマ確定後のAST照合実装） |
-| P6 RAWPACO-DEPR-002（RTL deprecatedシンボル抽出） | **Opus5** |
-| P7 RAWPACO-HALLUC-001（RTLシンボル突き合わせhallucination検知） | **Opus5** |
-| P8 RAWPACO-DEFENSE-002（生成直後nilチェック） | Sonnet5 |
-| P9 RAWPACO-STYLE-002（エラーハンドリング不統一の近似検知） | **Opus5** |
+| ASTWalker (traversal driver) | Sonnet5 |
+| TSBindings.pas extension (adding node-traversal functions) | Sonnet5 |
+| RuleRegistry, rule interface definition | Sonnet5 |
+| Diagnostics (TDiagnostic, text/github/json output formatter) | Sonnet5 |
+| Suppression-comment (`rawpaco:ignore`) mechanism | Sonnet5 |
+| tests/run_tests.sh, Makefile `test` target | Sonnet5 |
+| `--only`/`--exclude` options | Sonnet5 |
+| P1 RAWPACO-DEFENSE-001 (empty except) | Sonnet5 |
+| P2 RAWPACO-SEC-001 (SQL string concatenation) | Sonnet5 |
+| P3 RAWPACO-SEC-002 (hardcoded secrets) | Sonnet5 |
+| P4 RAWPACO-DEPR-001 (self-contradictory deprecated usage) | Sonnet5 |
+| P5 RAWPACO-STYLE-001 (naming conventions, config-file schema) | **Opus5** (schema/default rules) / Sonnet5 (AST-matching implementation once the schema is finalized) |
+| P6 RAWPACO-DEPR-002 (RTL deprecated-symbol extraction) | **Opus5** |
+| P7 RAWPACO-HALLUC-001 (RTL symbol cross-check hallucination detection) | **Opus5** |
+| P8 RAWPACO-DEFENSE-002 (nil check right after construction) | Sonnet5 |
+| P9 RAWPACO-STYLE-002 (approximate inconsistent-error-handling detection) | **Opus5** |

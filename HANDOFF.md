@@ -2,6 +2,10 @@
 
 このファイルはセッション間の引き継ぎ用です。決着した論点は都度削除し、git historyに委ねてください（詳細な運用ルールはCLAUDE.mdを参照）。
 
+## ドキュメントの言語について
+
+`docs/RULE_ENGINE_DESIGN.md`・`docs/SYSTEM_FLOW.md`・`docs/flows/*.md` は英語版が正（canonical）。日本語版はファイル名に`_jp`を付けた別ファイル（例: `docs/RULE_ENGINE_DESIGN_jp.md`）として参照用に残している。内容を更新する際は英語版を先に直し、日本語版は追従（または既に古いことが分かる形でそのまま）とする。新規にこの種のドキュメントを追加する場合も同じ命名規約（英語が無印、日本語が`_jp`）に揃えること。本HANDOFF.md自体・CLAUDE.md・README.mdはこの対象外（README.mdは1ファイル内でJP/EN併記、HANDOFF.mdは元々日本語のみ）。
+
 ## 実装済みルール一覧
 
 | ID | 内容 | 状態 | 備考 |

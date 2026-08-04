@@ -1,81 +1,84 @@
-# システムフロー図
+# System Flow Diagrams
 
-[docs/RULE_ENGINE_DESIGN.md](RULE_ENGINE_DESIGN.md) で設計したルールエンジンについて、全体の流れをMermaid図でまとめたものです。設計の詳細・各要素の担当（Sonnet5/Opus5）は設計書側を参照してください。
+*A Japanese translation is kept for reference at [docs/SYSTEM_FLOW_jp.md](SYSTEM_FLOW_jp.md); this English version is canonical.*
 
-現時点で `src/` 配下に実際に存在する各ソースファイル単位のプログラムフローは [docs/flows/](flows/) 配下に個別ファイルとしてまとめています。
+This summarizes, as Mermaid diagrams, the overall flow of the rule engine designed in [docs/RULE_ENGINE_DESIGN.md](RULE_ENGINE_DESIGN.md). See the design doc for details and per-element ownership (Sonnet5/Opus5).
 
-- [docs/flows/rawpaco_lpr.md](flows/rawpaco_lpr.md) — `src/rawpaco.lpr`（現状は自己チェック用プログラム）
-- [docs/flows/tsbindings_pas.md](flows/tsbindings_pas.md) — `src/TSBindings.pas`（実行時ロジックを持たないコンパイル/リンクフロー）
-- [docs/flows/win32_atexit_shim_c.md](flows/win32_atexit_shim_c.md) — `src/win32_atexit_shim.c`（Windows専用のatexit転送シム）
+The program flow for each source file that actually exists under `src/` at this point in time is documented as individual files under [docs/flows/](flows/).
 
-`vendor/` 配下の第三者コード（tree-sitter本体・tree-sitter-pascalの生成済みパーサ）は対象外としています。
+- [docs/flows/rawpaco_lpr.md](flows/rawpaco_lpr.md) — `src/rawpaco.lpr` (the CLI entry point)
+- [docs/flows/tsbindings_pas.md](flows/tsbindings_pas.md) — `src/TSBindings.pas` (a compile/link flow with no runtime logic)
+- [docs/flows/win32_atexit_shim_c.md](flows/win32_atexit_shim_c.md) — `src/win32_atexit_shim.c` (a Windows-only `atexit` forwarding shim)
 
-## 1. GitHub Actions統合フロー（外部から見た全体像）
+Third-party code under `vendor/` (tree-sitter itself and the generated tree-sitter-pascal parser) is out of scope here.
 
-rawpacoがどのようにCIへ組み込まれ、開発ループに影響するかを示します。
+## 1. GitHub Actions Integration Flow (the external, big-picture view)
+
+Shows how rawpaco is wired into CI and how it affects the development loop.
 
 ```mermaid
 flowchart LR
-    Dev["開発者/AIがコードをpush"] --> GHA["GitHub Actions起動\n(.github/workflows/ci.yml)"]
-    GHA --> Build["make\nvendor Cソースをgccでコンパイル\n→ FPCでrawpacoを静的リンクビルド"]
-    Build --> Run["rawpaco src/*.pas\n(selflintターゲット)"]
-    Run --> Diag{"診断結果は0件か？"}
-    Diag -->|"0件"| Pass["終了コード0\nビルド成功"]
-    Diag -->|"1件以上"| Fail["終了コード1\ntext形式で標準出力に列挙"]
-    Fail --> Fix["コード側を修正\n(true positiveとして扱う)"]
+    Dev["Developer/AI pushes code"] --> GHA["GitHub Actions triggers\n(.github/workflows/ci.yml)"]
+    GHA --> Build["make\ncompile vendor C sources with gcc\n→ statically link-build rawpaco with FPC"]
+    Build --> Run["rawpaco src/*.pas\n(the selflint target)"]
+    Run --> Diag{"Zero diagnostics?"}
+    Diag -->|"zero"| Pass["Exit code 0\nbuild succeeds"]
+    Diag -->|"one or more"| Fail["Exit code 1\nlisted to stdout in text format"]
+    Fail --> Fix["Fix the code\n(treated as a true positive)"]
     Fix --> Dev
-    Pass --> Merge["レビュー・マージ"]
+    Pass --> Merge["Review and merge"]
 ```
 
-**実装状況の注記（2026-08-04、レビューで判明）**: `--format=github` オプション、PRへのインライン注釈、`// rawpaco:ignore <RuleId>` による抑制コメントは、`docs/RULE_ENGINE_DESIGN.md` 4節で設計されたが**未実装**（詳細はHANDOFF.mdの「未着手・保留中」参照）。実際に出力できるのは `text` 形式のみで、誤検知が出た場合の逃げ道が無いため、現状は「見つかった診断は必ずコード側を直す」運用になっている。上の図は実装済みの経路のみを描いている。
+**Implementation status note (2026-08-04, found during review)**: the `--format=github` option, inline PR annotations, and suppression comments via `// rawpaco:ignore <RuleId>` were designed in `docs/RULE_ENGINE_DESIGN.md` section 4, but are **unimplemented** (see HANDOFF.md's "Not yet started / pending" for details). The only format that can actually be emitted is `text`, and since there's no escape hatch for a false positive, the current operating model is "any diagnostic found must be fixed in the code." The diagram above depicts only the paths that are actually implemented.
 
-## 2. rawpaco内部の実行フロー
+## 2. rawpaco's Internal Execution Flow
 
-`rawpaco.lpr`が起動してから終了コードを返すまでの、1回の実行内の流れです（設計書1.1/1.6節に対応）。
+The flow within a single run, from `rawpaco.lpr` starting up to it returning an exit code (corresponds to design doc sections 1.1/1.6).
 
 ```mermaid
 flowchart TD
-    CLI["rawpaco.lpr\nCLIエントリポイント"] --> Driver["LintDriver"]
-    Driver --> Enum["対象ファイル列挙\n(コマンドライン引数のパス)"]
-    Enum --> FileLoop{"各対象ファイルについて"}
+    CLI["rawpaco.lpr\nCLI entry point"] --> Driver["LintDriver"]
+    Driver --> Enum["Enumerate target files\n(paths from command-line arguments)"]
+    Enum --> FileLoop{"For each target file"}
 
-    FileLoop --> Read["ファイル読み込み(Source)"]
-    Read --> Parse["ts_parser_parse_string\n(TSBindings.pas経由)"]
+    FileLoop --> Read["Read the file (Source)"]
+    Read --> Parse["ts_parser_parse_string\n(via TSBindings.pas)"]
     Parse --> Root["ts_tree_root_node"]
-    Root --> Ctx["TLintContext.Create\n(ファイル名・Sourceを保持)"]
+    Root --> Ctx["TLintContext.Create\n(holds file name + Source)"]
     Ctx --> Walk["ASTWalker.WalkTree(Root, Ctx)"]
 
     subgraph Registry["RuleRegistry"]
-        Dispatch["ノード種別 → 関心のあるルールの\nディスパッチテーブル"]
+        Dispatch["Node type → dispatch table of\ninterested rules"]
     end
 
-    AllRules["Rules/AllRules.pas\n(usesで全ルールユニットを列挙、\ninitializationでRegisterを実行)"] -. 登録 .-> Registry
+    AllRules["Rules/AllRules.pas\n(lists every rule unit in its uses clause,\nruns Register from initialization)"] -. registers .-> Registry
 
-    Walk -->|"ノードごとに種別で引く"| Dispatch
-    Dispatch -->|"該当ルールのCheckを呼ぶ"| RuleCheck["IRawpacoRule.Check(Node, Ctx)"]
-    RuleCheck -->|"問題を検出した場合"| Report["Ctx.Report(RuleId, Message, Node)"]
-    Report --> DiagList["TDiagnosticをFDiagnosticsへ蓄積"]
+    Walk -->|"looked up by type, per node"| Dispatch
+    Dispatch -->|"calls the matching rule's Check"| RuleCheck["IRawpacoRule.Check(Node, Ctx)"]
+    RuleCheck -->|"when a problem is found"| Report["Ctx.Report(RuleId, Message, Node)"]
+    Report --> DiagList["Accumulates a TDiagnostic into FDiagnostics"]
     DiagList --> Walk
 
-    Walk -->|"走査完了"| PrintFile["そのファイルのCtx.Diagnosticsを\ntext形式で即座にWriteLn\n(ファイルをまたいだ集約はしない)"]
-    PrintFile --> FreeTree["ts_tree_deleteで解放"]
+    Walk -->|"traversal complete"| PrintFile["Immediately WriteLn that file's\nCtx.Diagnostics in text format\n(no cross-file aggregation)"]
+    PrintFile --> FreeTree["Freed via ts_tree_delete"]
     FreeTree --> FileLoop
-    FileLoop -->|"全ファイル完了"| ExitCode["終了コード決定\n診断0件かつ読み込みエラー無し→0、\nそれ以外→1"]
+    FileLoop -->|"all files done"| ExitCode["Decide exit code\n0 if zero diagnostics and no read errors,\n1 otherwise"]
 ```
 
-（`--format`オプション・`github`/`json`形式は未実装。上記の通り実際は1ファイルずつ`text`形式で標準出力に書き出す方式。詳細は前節の注記を参照。）
+(The `--format` option and `github`/`json` formats are unimplemented. As shown above, output is actually written to stdout one file at a time in `text` format. See the note in the previous section for details.)
 
-## 3. ルール実装単位の静的関係
+## 3. Static Relationship Between Rule Implementation Units
 
-「1ルール=1ユニット」という実装単位が、走査・登録の仕組みとどう繋がるかを示します（設計書1.4節に対応）。
+Shows how the "one rule = one unit" implementation model connects to the traversal/registration machinery (corresponds to design doc section 1.4).
 
 ```mermaid
 flowchart LR
-    subgraph RuleUnit["src/Rules/RuleXxx.pas (ルール1つにつき1ユニット)"]
+    subgraph RuleUnit["src/Rules/RuleXxx.pas (one unit per rule)"]
         Impl["TRuleXxx = class(TInterfacedObject, IRawpacoRule)\nRuleId / Description /\nInterestedNodeTypes / Check"]
         Init["initialization\nRuleRegistry.Register(TRuleXxx.Create)"]
     end
 
-    AllRulesUnit["src/Rules/AllRules.pas\nuses RuleXxx, RuleYyy, ...;"] -->|"usesされて初めてinitializationが走る"| Init
-    Init -->|"登録"| RegistryUnit["RuleRegistry.pas\nディスパッチテーブル"]
-    RegistryUnit -->|"参照"| WalkerUnit["ASTWalker.pas\n(ルールのロジックは知らない)"]
+    AllRulesUnit["src/Rules/AllRules.pas\nuses RuleXxx, RuleYyy, ...;"] -->|"initialization only runs once it's uses'd"| Init
+    Init -->|"registers"| RegistryUnit["RuleRegistry.pas\ndispatch table"]
+    RegistryUnit -->|"referenced by"| WalkerUnit["ASTWalker.pas\n(knows nothing about rule logic)"]
+```
