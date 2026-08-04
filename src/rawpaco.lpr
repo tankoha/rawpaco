@@ -3,7 +3,7 @@ program rawpaco;
 {$mode objfpc}{$H+}
 
 uses
-  SysUtils, Classes, TSBindings, LintDriver, RawpacoConfig, RuleRegistry;
+  SysUtils, Classes, TSBindings, LintDriver, RawpacoConfig, RuleRegistry, Diagnostics;
 
 const
   VersionString = '0.0.1-dev';
@@ -47,8 +47,9 @@ var
   Source: AnsiString;
   Files: array of string;
   I: Integer;
-  Arg, ConfigPath, ConfigError, FilterError: string;
+  Arg, ConfigPath, ConfigError, FilterError, FormatError, FormatStr: string;
   OnlyIds, ExcludeIds: TStringArray;
+  OutFormat: TOutputFormat;
 begin
   WriteLn('rawpaco ', VersionString, ' - FPC/Lazarus Pascal lint tool (tree-sitter-pascal based)');
 
@@ -85,6 +86,7 @@ begin
     // 未知のオプションを黙ってファイル名として扱うと「存在しないファイル」
     // エラーになって分かりにくいので、明示的に弾く。
     ConfigPath := '';
+    FormatStr := 'text';
     SetLength(OnlyIds, 0);
     SetLength(ExcludeIds, 0);
     SetLength(Files, 0);
@@ -93,6 +95,8 @@ begin
       Arg := ParamStr(I);
       if Copy(Arg, 1, 9) = '--config=' then
         ConfigPath := Copy(Arg, 10, Length(Arg))
+      else if Copy(Arg, 1, 9) = '--format=' then
+        FormatStr := Copy(Arg, 10, Length(Arg))
       else if Copy(Arg, 1, 7) = '--only=' then
       begin
         OnlyIds := SplitCommaList(Copy(Arg, 8, Length(Arg)));
@@ -119,7 +123,7 @@ begin
       else if Copy(Arg, 1, 2) = '--' then
       begin
         WriteLn(StdErr, 'error: unknown option ', Arg);
-        WriteLn(StdErr, 'usage: rawpaco [--config=<path>] [--only=<id>[,<id>...] | --exclude=<id>[,<id>...]] <file.pas> ...');
+        WriteLn(StdErr, 'usage: rawpaco [--config=<path>] [--format=text|github|json] [--only=<id>[,<id>...] | --exclude=<id>[,<id>...]] <file.pas> ...');
         Halt(2);
       end
       else
@@ -132,6 +136,12 @@ begin
     if not InitConfig(ConfigPath, ConfigError) then
     begin
       WriteLn(StdErr, 'error: ', ConfigError);
+      Halt(2);
+    end;
+
+    if not ParseOutputFormat(FormatStr, OutFormat, FormatError) then
+    begin
+      WriteLn(StdErr, 'error: ', FormatError);
       Halt(2);
     end;
 
@@ -155,6 +165,6 @@ begin
       Halt(2);
     end;
 
-    Halt(LintDriver.RunLint(Files));
+    Halt(LintDriver.RunLint(Files, OutFormat));
   end;
 end.

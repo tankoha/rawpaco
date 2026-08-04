@@ -210,7 +210,7 @@ To stay consistent with CLAUDE.md rule 3 (both positive and negative required), 
 
 ## 4. Diagnostic Output Format
 
-**Implementation status note (2026-08-04, found during review)**: the `--format` option, `github`/`json` output, and the "inline suppression comment" (`// rawpaco:ignore`) designed in this section all remain unimplemented, even after P1–P9 and `--only`/`--exclude` were completed. The only format actually implemented is `text` (`src/Diagnostics.pas`'s `FormatDiagnosticText`), and the only options `src/rawpaco.lpr` accepts are `--config`/`--only`/`--exclude`. See HANDOFF.md's "Not yet started / pending" section for details.
+**Implementation status note (2026-08-04, implemented)**: the `--format` option, `github`/`json` output, and the "inline suppression comment" (`// rawpaco:ignore`) designed in this section are all implemented. Formatters live in `src/Diagnostics.pas` (`FormatDiagnosticText`/`FormatDiagnosticGithub`/`FormatDiagnosticsJson`), `--format` parsing/validation is `Diagnostics.ParseOutputFormat`, and `src/LintDriver.pas`'s `RunLint` collects all diagnostics across every input file into a single list (needed so the `json` format can emit one array) before applying suppression filtering and formatting. See `tests/run_tests.sh`'s `format_case`/`suppression_case` for the regression coverage, and `tests/suppression/` for the fixture files.
 
 With GitHub Actions usage as the primary target, the following three formats are supported (via a `--format` option, defaulting to `text`).
 
@@ -221,6 +221,8 @@ With GitHub Actions usage as the primary target, the following three formats are
 **Exit code**: `1` if there is even a single diagnostic, `0` if there are none. As the flip side of CLAUDE.md rule 5 (prioritize avoiding false positives), the policy is that once something has been adopted as a rule, "warning = needs fixing" is meant to be a strong signal; exit-code control weighted by warning/error severity (e.g. letting warnings through) is not introduced for now (severity-based threshold control is noted as a future extension candidate in section 7).
 
 **Inline suppression comment**: to handle individual false positives and deliberate exceptions, if `// rawpaco:ignore <RuleId>` appears on the target line or the line immediately before it, the diagnostic for that `RuleId` on that line is suppressed. Working from the premise that false positives can never be reduced to zero (CLAUDE.md rule 5 says "prioritize avoiding," not "guarantee"), this was judged essential as an escape hatch so the tool can realistically be run as a CI blocker. The recommended operating rule when using a suppression comment is to also note "why it's being suppressed"; this is something that could be added to `README.md`/`CLAUDE.md` in the future (this design doc only proposes it). (Owner: Sonnet5)
+
+Implementation note: the row/column tracked in `TDiagnostic` is tree-sitter's `TSPoint.row`, which (per `vendor/tree-sitter/src/lexer.c`'s `ts_lexer__do_advance`) only advances on a `'\n'` byte, not on a lone `'\r'`. `Diagnostics.SplitSourceLines` therefore splits source text on `'\n'` only (not via a generic CR/LF/CRLF-aware line splitter) so that suppression-comment line lookups stay aligned with tree-sitter's own row numbering (CLAUDE.md rule 1: cross-check against the vendored implementation itself, not an assumption).
 
 ## 5. Path to Integrating Self-Linting (the Chicken-and-Egg Problem)
 

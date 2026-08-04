@@ -2,7 +2,7 @@
 
 *A Japanese translation is kept for reference at [docs/flows/rawpaco_lpr_jp.md](rawpaco_lpr_jp.md); this English version is canonical.*
 
-**Implementation status note (2026-08-04, found during review)**: what this file diagrams is only the path taken when `rawpaco.lpr` is launched **with no arguments**. Now that the rule engine (P1–P9, `--only`/`--exclude`) is complete, `rawpaco.lpr` also has a full lint-execution path: given file arguments, it parses `--config`/`--only`/`--exclude` and then calls `LintDriver.RunLint` (note that the "currently" wording below describes the state at the time this file was originally written). For that path, see "2. rawpaco's Internal Execution Flow" in [docs/SYSTEM_FLOW.md](../SYSTEM_FLOW.md).
+**Implementation status note (2026-08-04, found during review; updated 2026-08-04 as `--format`/`rawpaco:ignore` were implemented)**: what this file diagrams is only the path taken when `rawpaco.lpr` is launched **with no arguments**. Now that the rule engine (P1–P9, `--only`/`--exclude`, `--format`) is complete, `rawpaco.lpr` also has a full lint-execution path: given file arguments, it parses `--config`/`--format`/`--only`/`--exclude` and then calls `LintDriver.RunLint` (note that the "currently" wording below describes the state at the time this file was originally written). For that path, see "2. rawpaco's Internal Execution Flow" in [docs/SYSTEM_FLOW.md](../SYSTEM_FLOW.md).
 
 What follows is the original description (the self-check path taken with no arguments), which is still accurate today.
 

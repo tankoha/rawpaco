@@ -207,7 +207,7 @@ CLAUDE.mdルール3（positive/negative両方必須）との整合のため、�
 
 ## 4. 診断結果の出力形式
 
-**実装状況の注記（2026-08-04、レビューで判明）**: 本節で設計した `--format` オプション・`github`/`json` 出力・末尾の「インライン抑制コメント」（`// rawpaco:ignore`）は、P1〜P9・`--only`/`--exclude` の実装完了時点でもいずれも未実装のままである。実際に実装されているのは `text` 形式のみ（`src/Diagnostics.pas` の `FormatDiagnosticText`）で、`src/rawpaco.lpr` が受け付けるオプションは `--config`/`--only`/`--exclude` のみ。詳細はHANDOFF.mdの「未着手・保留中」を参照。
+**実装状況の注記（2026-08-04、実装済み）**: 本節で設計した `--format` オプション・`github`/`json` 出力・「インライン抑制コメント」（`// rawpaco:ignore`）はいずれも実装済み。フォーマッタは `src/Diagnostics.pas`（`FormatDiagnosticText`/`FormatDiagnosticGithub`/`FormatDiagnosticsJson`）、`--format` の解析・検証は `Diagnostics.ParseOutputFormat`、`src/LintDriver.pas` の `RunLint` は全入力ファイル分の診断を1つのリストに集約してから（`json`形式が単一の配列を出す必要があるため）抑制フィルタと整形を通す構成にした。回帰テストは `tests/run_tests.sh` の `format_case`/`suppression_case`、フィクスチャは `tests/suppression/` を参照。
 
 GitHub Actions上での利用を主眼に、以下の3形式をサポートします（`--format` オプション、デフォルトは `text`）。
 
@@ -218,6 +218,8 @@ GitHub Actions上での利用を主眼に、以下の3形式をサポートし�
 **終了コード**: 診断が1件でもあれば `1`、0件なら `0`。CLAUDE.mdルール5（false positive回避優先）の裏返しとして、いったんルールとして採用したものは「警告＝要修正」という強いシグナルにする方針とし、warning/errorの重み付けによる終了コード制御（例: warningなら通す）は当面導入しません（重要度別の閾値制御は将来の拡張候補として8節に記載）。
 
 **インライン抑制コメント**: 個別の誤検知・意図的な例外に対応するため、対象行または直前行に `// rawpaco:ignore <RuleId>` があれば、その行に関するその `RuleId` の診断を抑制します。false positiveをゼロにはできない前提（CLAUDE.mdルール5はあくまで「回避を優先する」であり保証ではない）に立ち、CIをブロックするツールとして運用可能にするための逃げ道として必須と判断しました。抑制コメントを使う場合は「なぜ抑制するか」のコメントも併記することを推奨する運用ルールとし、これは将来 `README.md`/`CLAUDE.md` に追記を検討してよい項目です（本設計書では提案に留める）。（担当: Sonnet5）
+
+実装メモ: `TDiagnostic` が持つ行・列はtree-sitterの`TSPoint.row`由来だが、`vendor/tree-sitter/src/lexer.c`の`ts_lexer__do_advance`を確認すると`'\n'`バイトの出現でのみ行が進み、`'\r'`単体では進まない。`Diagnostics.SplitSourceLines`はCR/LF/CRLFいずれも改行として扱う汎用的な行分割ではなく、`'\n'`のみで自前分割することで、抑制コメントの行番号照合をtree-sitter自身の行番号基準と一致させている（CLAUDE.mdルール1: 想定ではなくvendor配下の実装そのもので照合する）。
 
 ## 5. 自己lint組み込みへの道筋（鶏卵問題）
 

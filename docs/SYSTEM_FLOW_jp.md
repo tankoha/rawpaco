@@ -29,7 +29,7 @@ flowchart LR
     Pass --> Merge["レビュー・マージ"]
 ```
 
-**実装状況の注記（2026-08-04、レビューで判明）**: `--format=github` オプション、PRへのインライン注釈、`// rawpaco:ignore <RuleId>` による抑制コメントは、`docs/RULE_ENGINE_DESIGN.md` 4節で設計されたが**未実装**（詳細はHANDOFF.mdの「未着手・保留中」参照）。実際に出力できるのは `text` 形式のみで、誤検知が出た場合の逃げ道が無いため、現状は「見つかった診断は必ずコード側を直す」運用になっている。上の図は実装済みの経路のみを描いている。
+**実装状況の注記（2026-08-04、実装済み）**: `--format=github` オプション、PRへのインライン注釈、`// rawpaco:ignore <RuleId>` による抑制コメントは、`docs/RULE_ENGINE_DESIGN.md` 4節で設計された内容がいずれも実装済み。上図のselflintターゲットは既定の `text` 形式のままだが（自ソースのlintにPR注釈形式は不要なため）、`--format=github`/`--format=json` は他の呼び出し（例: PRチェック用ワークフローへの組み込み）で利用できる。プロジェクトコード側の誤検知にも `// rawpaco:ignore <RuleId>` という逃げ道が「見つかった診断は必ず直す」という既定の運用に加わった。
 
 ## 2. rawpaco内部の実行フロー
 
@@ -59,13 +59,18 @@ flowchart TD
     Report --> DiagList["TDiagnosticをFDiagnosticsへ蓄積"]
     DiagList --> Walk
 
-    Walk -->|"走査完了"| PrintFile["そのファイルのCtx.Diagnosticsを\ntext形式で即座にWriteLn\n(ファイルをまたいだ集約はしない)"]
-    PrintFile --> FreeTree["ts_tree_deleteで解放"]
+    Walk -->|"走査完了"| Suppress["Diagnostics.IsDiagnosticSuppressed\n診断ごとに、対象行と直前行の\n// rawpaco:ignore RuleId を確認"]
+    Suppress -->|"抑制されない場合"| AllDiags["全入力ファイルを通じた\n単一のAllDiagsリストへ追加\n(--format=jsonが単一配列を出すために必要)"]
+    AllDiags --> FreeTree["ts_tree_deleteで解放"]
     FreeTree --> FileLoop
-    FileLoop -->|"全ファイル完了"| ExitCode["終了コード決定\n診断0件かつ読み込みエラー無し→0、\nそれ以外→1"]
+    FileLoop -->|"全ファイル完了"| Format{"OutFormat\n(--format由来、既定はtext)"}
+    Format -->|"text"| PrintText["診断ごとにWriteLn、\nFormatDiagnosticText"]
+    Format -->|"github"| PrintGithub["診断ごとにWriteLn、\nFormatDiagnosticGithub\n(GitHub Actionsワークフローコマンド)"]
+    Format -->|"json"| PrintJson["1回だけWriteLn、\nFormatDiagnosticsJson\n(fcl-jsonによる単一JSON配列)"]
+    PrintText --> ExitCode["終了コード決定\nAllDiagsが空かつ読み込みエラー無し→0、\nそれ以外→1"]
+    PrintGithub --> ExitCode
+    PrintJson --> ExitCode
 ```
-
-（`--format`オプション・`github`/`json`形式は未実装。上記の通り実際は1ファイルずつ`text`形式で標準出力に書き出す方式。詳細は前節の注記を参照。）
 
 ## 3. ルール実装単位の静的関係
 

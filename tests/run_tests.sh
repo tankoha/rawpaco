@@ -98,6 +98,45 @@ config_case() {
   fi
 }
 
+# --format の配線を確認する(設計書4節)。text形式の内容自体は check_dir/flag_case
+# で既に検証済みなので、ここではgithub/jsonの形と、値検証(未知の値はrc=2)を見る。
+format_case() {
+  local desc="$1" flag="$2" target="$3" want_rc="$4"; shift 4
+  local checks=("$@")
+  local output rc all_ok=1 c
+  output="$("$RAWPACO" "$flag" "$target" 2>&1)"; rc=$?
+  for c in "${checks[@]}"; do
+    if ! echo "$output" | grep -qF "$c"; then
+      echo "FAIL: format case '$desc': expected output to contain '$c'"
+      all_ok=0
+    fi
+  done
+  if [ "$rc" != "$want_rc" ]; then
+    echo "FAIL: format case '$desc': expected rc=$want_rc, got rc=$rc"
+    all_ok=0
+  fi
+  if [ "$all_ok" = 1 ]; then
+    echo "ok:   format case '$desc'"
+  else
+    echo "$output" | sed 's/^/  /'
+    FAIL=1
+  fi
+}
+
+# 抑制コメント(`// rawpaco:ignore <RuleId>`)の配線を確認する(設計書4節)。
+suppression_case() {
+  local desc="$1" file="$2" want_tag="$3" want_rc="$4" output rc found
+  output="$("$RAWPACO" "$file" 2>&1)"; rc=$?
+  if echo "$output" | grep -qF "[RAWPACO-DEFENSE-001]"; then found=yes; else found=no; fi
+  if [ "$found" != "$want_tag" ] || [ "$rc" != "$want_rc" ]; then
+    echo "FAIL: suppression case '$desc': expected tag=$want_tag/rc=$want_rc, got tag=$found/rc=$rc"
+    echo "$output" | sed 's/^/  /'
+    FAIL=1
+  else
+    echo "ok:   suppression case '$desc'"
+  fi
+}
+
 NEG_STYLE=tests/negative/RAWPACO-STYLE-001/type_names_without_prefix.pas
 POS_STYLE=tests/positive/RAWPACO-STYLE-001/conventional_names.pas
 NEG_DEFENSE=tests/negative/RAWPACO-DEFENSE-001/empty_except.pas
@@ -115,6 +154,16 @@ flag_error_case 'empty --exclude value'        2 --exclude=
 # すり抜けるバグがあった。フラグごとに独立してチェックするよう修正済み。
 flag_error_case 'empty --only value with non-empty --exclude'   2 --only= --exclude=RAWPACO-DEFENSE-001
 flag_error_case 'empty --exclude value with non-empty --only'   2 --exclude= --only=RAWPACO-DEFENSE-001
+
+format_case 'github format emits a workflow command'            --format=github "$NEG_DEFENSE" 1 '::warning file=' '[RAWPACO-DEFENSE-001]'
+format_case 'json format emits a JSON array with the diagnostic' --format=json   "$NEG_DEFENSE" 1 '"ruleId"' '"RAWPACO-DEFENSE-001"'
+format_case 'json format with no diagnostics is an empty array' --format=json \
+  tests/positive/RAWPACO-DEFENSE-001/real_handler.pas 0 '[]'
+flag_error_case 'unknown --format value' 2 --format=xml
+
+suppression_case 'ignore comment on the same line suppresses'               tests/suppression/ignore_same_line.pas     no  0
+suppression_case 'ignore comment on the previous line suppresses'           tests/suppression/ignore_previous_line.pas no  0
+suppression_case 'ignore comment for a different rule id does not suppress' tests/suppression/wrong_rule_id.pas        yes 1
 
 # naming.enabled=false でルール全体が黙る
 config_case 'naming disabled'        tests/config/naming_disabled.json "$NEG_STYLE" no  0

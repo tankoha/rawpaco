@@ -29,7 +29,7 @@ flowchart LR
     Pass --> Merge["Review and merge"]
 ```
 
-**Implementation status note (2026-08-04, found during review)**: the `--format=github` option, inline PR annotations, and suppression comments via `// rawpaco:ignore <RuleId>` were designed in `docs/RULE_ENGINE_DESIGN.md` section 4, but are **unimplemented** (see HANDOFF.md's "Not yet started / pending" for details). The only format that can actually be emitted is `text`, and since there's no escape hatch for a false positive, the current operating model is "any diagnostic found must be fixed in the code." The diagram above depicts only the paths that are actually implemented.
+**Implementation status note (2026-08-04, implemented)**: the `--format=github` option, inline PR annotations, and suppression comments via `// rawpaco:ignore <RuleId>` designed in `docs/RULE_ENGINE_DESIGN.md` section 4 are all implemented. The self-lint target above still uses the default `text` format (CI doesn't need PR-annotation output for its own source), but `--format=github`/`--format=json` are available for other invocations (e.g. wiring rawpaco into a PR-checking workflow step). A false positive in project code now has an escape hatch via `// rawpaco:ignore <RuleId>`, on top of the "any diagnostic found must be fixed" default.
 
 ## 2. rawpaco's Internal Execution Flow
 
@@ -59,13 +59,18 @@ flowchart TD
     Report --> DiagList["Accumulates a TDiagnostic into FDiagnostics"]
     DiagList --> Walk
 
-    Walk -->|"traversal complete"| PrintFile["Immediately WriteLn that file's\nCtx.Diagnostics in text format\n(no cross-file aggregation)"]
-    PrintFile --> FreeTree["Freed via ts_tree_delete"]
+    Walk -->|"traversal complete"| Suppress["Diagnostics.IsDiagnosticSuppressed\nper-diagnostic, checking the target line\nand the line before it for\n// rawpaco:ignore RuleId"]
+    Suppress -->|"not suppressed"| AllDiags["Appended to a single AllDiags list\nspanning every input file\n(needed so --format=json can emit one array)"]
+    AllDiags --> FreeTree["Freed via ts_tree_delete"]
     FreeTree --> FileLoop
-    FileLoop -->|"all files done"| ExitCode["Decide exit code\n0 if zero diagnostics and no read errors,\n1 otherwise"]
+    FileLoop -->|"all files done"| Format{"OutFormat\n(from --format, default text)"}
+    Format -->|"text"| PrintText["WriteLn per diagnostic,\nFormatDiagnosticText"]
+    Format -->|"github"| PrintGithub["WriteLn per diagnostic,\nFormatDiagnosticGithub\n(GitHub Actions workflow command)"]
+    Format -->|"json"| PrintJson["WriteLn once,\nFormatDiagnosticsJson\n(single JSON array via fpjson)"]
+    PrintText --> ExitCode["Decide exit code\n0 if AllDiags is empty and no read errors,\n1 otherwise"]
+    PrintGithub --> ExitCode
+    PrintJson --> ExitCode
 ```
-
-(The `--format` option and `github`/`json` formats are unimplemented. As shown above, output is actually written to stdout one file at a time in `text` format. See the note in the previous section for details.)
 
 ## 3. Static Relationship Between Rule Implementation Units
 

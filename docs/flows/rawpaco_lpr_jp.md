@@ -1,6 +1,6 @@
 # プログラムフロー: src/rawpaco.lpr
 
-**実装状況の注記（2026-08-04、レビューで判明）**: 本ファイルが描いているのは `rawpaco.lpr` の**引数なし起動時**の経路のみである。ルールエンジン実装（P1〜P9・`--only`/`--exclude`）が完了した現在、`rawpaco.lpr` はファイル引数を渡すと `--config`/`--only`/`--exclude` を解析したうえで `LintDriver.RunLint` を呼ぶ、本格的なlint実行の経路も持つ（下記の「現状」という記述は当時のものなので注意）。そちらの流れは [docs/SYSTEM_FLOW_jp.md](../SYSTEM_FLOW_jp.md) の「2. rawpaco内部の実行フロー」を参照。
+**実装状況の注記（2026-08-04、レビューで判明。`--format`/`rawpaco:ignore`実装に伴い2026-08-04更新）**: 本ファイルが描いているのは `rawpaco.lpr` の**引数なし起動時**の経路のみである。ルールエンジン実装（P1〜P9・`--only`/`--exclude`・`--format`）が完了した現在、`rawpaco.lpr` はファイル引数を渡すと `--config`/`--format`/`--only`/`--exclude` を解析したうえで `LintDriver.RunLint` を呼ぶ、本格的なlint実行の経路も持つ（下記の「現状」という記述は当時のものなので注意）。そちらの流れは [docs/SYSTEM_FLOW_jp.md](../SYSTEM_FLOW_jp.md) の「2. rawpaco内部の実行フロー」を参照。
 
 以下は元々の記述（引数なし起動時の自己チェック経路）で、現在も正確である。
 

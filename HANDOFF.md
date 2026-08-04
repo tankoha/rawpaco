@@ -123,14 +123,16 @@
 - `tests/run_tests.sh` の `flag_case`/`flag_error_case` で配線を確認（DEFENSE-001/SEC-001の2ファイルを同時に渡し、フィルタで片方だけが黙ることを見る）。
 - **バグ修正済み（2026-08-04、Fable5のレビューで発見）**: 空値チェックが元々「`--only`/`--exclude`両方とも空か」をループ完了後にまとめて見ていたため、`--only= --exclude=RAWPACO-X`のように片方だけが空でもう片方に値がある場合、空の方が「フラグ自体が現れていない」扱いになりすり抜けていた。各フラグの値を読んだその場（パースループ内）で個別にチェックするよう修正し、`tests/run_tests.sh`に回帰テスト（`empty --only value with non-empty --exclude`等）を追加した。
 
-## 未着手・保留中
+## `--format` オプション・抑制コメント(`rawpaco:ignore`)について
 
-- 設計書 P1〜P9・`--only`/`--exclude` は全て実装済み（各ルールで見送った拡張候補は「tree-sitter-pascal 文法カバレッジの既知の穴」セクション内に個別記載）。
-- **設計書4節（診断結果の出力形式）は未実装のまま残っている**（レビューで判明、2026-08-04）。具体的には次の3つ:
-  1. `--format` オプション自体が存在しない。
-  2. `github`（GitHub Actions ワークフローコマンド形式）・`json` 出力が無く、`text` 形式（`src/Diagnostics.pas` の `FormatDiagnosticText`）しか出せない。
-  3. `// rawpaco:ignore <RuleId>` によるインライン抑制コメント機構が無い。
-  `docs/SYSTEM_FLOW.md`・`docs/RULE_ENGINE_DESIGN.md` はこれらが実装済みであるかのような記述になっていたため、今回のレビューで実装状況の注記を追加した。着手する場合は改めて優先度を検討すること（自己lint運用上は `text` 形式のみで足りているため、CI上の実害は今のところ無い）。
+- 設計書4節（担当Sonnet5）。実装済み(2026-08-04)。
+- `--format=text|github|json`（既定`text`）。検証・変換は`Diagnostics.ParseOutputFormat`が担い、未知の値は`rawpaco.json`の未知キー等と同じ方針でエラー終了(rc=2)にする(CLAUDE.mdルール5)。
+- `json`形式は診断結果全体を1個のJSON配列として出す必要がある(設計書4節)ため、`LintDriver.RunLint`は「ファイルごとに逐次出力」から「全入力ファイル分の診断を`AllDiags`という単一リストに集約してから、最後に選択された形式でまとめて出力する」方式に変更した。text/github形式もこの集約後のリストを使って出力する(挙動は従来と変わらない)。
+- `github`形式はGitHub Actionsのworkflow command構文(`::warning file=...,line=...,col=...::[RuleId] message`)。actions/toolkitのエスケープ規則に合わせ、プロパティ値(`file=`)は`%`/`\r`/`\n`に加えて`:`/`,`もエスケープするが、`::`以降のメッセージ本文はその2文字のエスケープが不要な点が異なる(`Diagnostics.EscapeGithubProperty`/`EscapeGithubData`)。
+- `json`形式は`fpjson`(`RawpacoConfig.pas`が読み込み側で既に使っている依存)を出力側でも再利用し、`TJSONArray.AsJSON`にエスケープを任せている。
+- 抑制コメント`// rawpaco:ignore <RuleId>`は、診断の対象行またはその直前行に書くと、その`RuleId`の診断だけを抑制する(`Diagnostics.IsDiagnosticSuppressed`)。**行番号の分割基準に注意が必要**: `TDiagnostic.Line`の元になるtree-sitterの`TSPoint.row`は`vendor/tree-sitter/src/lexer.c`の`ts_lexer__do_advance`実装上、`'\n'`の出現でのみ行を進め`'\r'`単体では進めない。`TStringList.Text`のようなCR/LF/CRLFいずれも改行として扱う汎用分割だと稀にtree-sitterの行番号とずれるため、`Diagnostics.SplitSourceLines`は同じ基準(`'\n'`のみ)で自前分割している(CLAUDE.mdルール1: vendor配下の実装そのもので照合)。
+- テストは`tests/run_tests.sh`の`format_case`/`suppression_case`、フィクスチャは`tests/suppression/`(`ignore_same_line.pas`/`ignore_previous_line.pas`/`wrong_rule_id.pas`、いずれもRAWPACO-DEFENSE-001を検証対象ルールとして流用)。
+- 自己lint(`make selflint`)は変更後も警告ゼロを確認済み。CI側の変更は不要(`make test`/`bash tests/run_tests.sh`が新規テストケースも自動的に拾う)。
 
 ## 直近セッションのメモ
 
