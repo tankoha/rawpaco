@@ -110,6 +110,11 @@ flag_error_case 'unknown --exclude id'         2 --exclude=RAWPACO-NOPE
 flag_error_case '--only and --exclude together' 2 --only=RAWPACO-DEFENSE-001 --exclude=RAWPACO-SEC-001
 flag_error_case 'empty --only value'           2 --only=
 flag_error_case 'empty --exclude value'        2 --exclude=
+# 回帰テスト(Fable5のレビューで発見): 空値チェックが元々ループ完了後の
+# 「両方とも空か」だけを見ており、片方だけ空でもう片方に値がある場合に
+# すり抜けるバグがあった。フラグごとに独立してチェックするよう修正済み。
+flag_error_case 'empty --only value with non-empty --exclude'   2 --only= --exclude=RAWPACO-DEFENSE-001
+flag_error_case 'empty --exclude value with non-empty --only'   2 --exclude= --only=RAWPACO-DEFENSE-001
 
 # naming.enabled=false でルール全体が黙る
 config_case 'naming disabled'        tests/config/naming_disabled.json "$NEG_STYLE" no  0

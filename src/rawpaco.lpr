@@ -94,9 +94,28 @@ begin
       if Copy(Arg, 1, 9) = '--config=' then
         ConfigPath := Copy(Arg, 10, Length(Arg))
       else if Copy(Arg, 1, 7) = '--only=' then
-        OnlyIds := SplitCommaList(Copy(Arg, 8, Length(Arg)))
+      begin
+        OnlyIds := SplitCommaList(Copy(Arg, 8, Length(Arg)));
+        // 値を見た直後にその場でチェックする。ループ完了後に
+        // 「OnlyIds/ExcludeIds両方が空か」だけを見ていた旧実装は、
+        // 例えば `--only= --exclude=RAWPACO-X` のように片方だけが
+        // 空だともう片方の非空でこのチェックがすり抜けてしまうバグが
+        // あった(Fable5のレビューで発見)。フラグごとに独立して検証する。
+        if Length(OnlyIds) = 0 then
+        begin
+          WriteLn(StdErr, 'error: ', Arg, ' requires a comma-separated list of rule ids');
+          Halt(2);
+        end;
+      end
       else if Copy(Arg, 1, 10) = '--exclude=' then
-        ExcludeIds := SplitCommaList(Copy(Arg, 11, Length(Arg)))
+      begin
+        ExcludeIds := SplitCommaList(Copy(Arg, 11, Length(Arg)));
+        if Length(ExcludeIds) = 0 then
+        begin
+          WriteLn(StdErr, 'error: ', Arg, ' requires a comma-separated list of rule ids');
+          Halt(2);
+        end;
+      end
       else if Copy(Arg, 1, 2) = '--' then
       begin
         WriteLn(StdErr, 'error: unknown option ', Arg);
@@ -123,19 +142,6 @@ begin
     begin
       WriteLn(StdErr, 'error: --only and --exclude cannot be used together');
       Halt(2);
-    end;
-    if (Length(OnlyIds) = 0) and (Length(ExcludeIds) = 0) then
-    begin
-      // "--only=" や "--exclude=" だけ渡して中身が空、というのは
-      // 「フィルタなし」と区別が付かず事故のもとなので、フラグ自体が
-      // 一度も現れていない場合とは別に、空リストで渡された場合はここで
-      // 検出してエラーにする。
-      for I := 1 to ParamCount do
-        if (ParamStr(I) = '--only=') or (ParamStr(I) = '--exclude=') then
-        begin
-          WriteLn(StdErr, 'error: ', ParamStr(I), ' requires a comma-separated list of rule ids');
-          Halt(2);
-        end;
     end;
     if not RuleRegistry.SetRuleFilter(OnlyIds, ExcludeIds, FilterError) then
     begin
