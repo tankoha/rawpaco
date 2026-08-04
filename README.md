@@ -1,6 +1,6 @@
 # rawpaco
 
-Rawpaco is a RAccoon Washing PAscal COde.
+Rawpaco is a RAccoon Washing PAscal COdes.
 
 tree-sitter-pascal を用いた、FPC/Lazarus 向け Pascal 静的解析（lint）ツール。
 A static analysis (lint) tool for FPC/Lazarus Pascal, built on tree-sitter-pascal.
