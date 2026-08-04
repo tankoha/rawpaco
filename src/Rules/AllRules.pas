@@ -14,7 +14,7 @@ interface
 
 uses
   RuleDefense001, RuleSec001, RuleSec002, RuleDepr001, RuleDepr002, RuleHalluc001,
-  RuleStyle001, RuleDefense002;
+  RuleStyle001, RuleDefense002, RuleStyle002;
 
 implementation
 

@@ -14,6 +14,7 @@
 | RAWPACO-HALLUC-001 | FPC RTL/FCLに実在しない識別子(hallucination)検知 | 実装済み | `src/Rules/RuleHalluc001.pas`。設計書P7。positive 4件/negative 3件。DEPR-002とデータを共有。判定A=ユニット修飾された参照(`Math.Clamp`等)、判定B=修飾なし呼び出し(usesが全て既知ユニットの場合のみ)。fpc-source全体(4894ファイル)で誤検知ゼロを実測 |
 | RAWPACO-STYLE-001 | 命名規則チェック(設定ファイルベース) | 実装済み | `src/Rules/RuleStyle001.pas` + `src/RawpacoConfig.pas`。設計書P5。positive 3件/negative 3件 + `tests/config/`の設定4ケース。設定は`rawpaco.json`(JSON/fcl-json)。既定は型名`T`(例外クラス`E`も許可)・インターフェース`I`・ポインタ型`P`・classのprivate/protectedフィールド`F`のみ |
 | RAWPACO-DEFENSE-002 | 生成直後の無意味なnilチェック検知 | 実装済み | `src/Rules/RuleDefense002.pas`。設計書P8。positive 3件/negative 3件。`Obj := <何か>.Create`(括弧の有無両対応)の直後(同一`block`/`statements`内で隣接する次の文)が`if`/`ifElse`で`Assigned(Obj)`をチェックしている場合のみ検知 |
+| RAWPACO-STYLE-002 | 同一ファイル内のエラーハンドリング不統一(近似) | 実装済み | `src/Rules/RuleStyle002.pas`。設計書P9。positive 5件/negative 3件。固定リストの失敗しうるAPI(`AssignFile`/`CloseFile`/`Reset`/`Rewrite`/`BlockRead`/`BlockWrite` と、`uses SysUtils`がある場合のみ`StrToInt`系8種)が、同一ファイル内でtry-except配下と素通しの両方に現れる場合、素通し側を報告。fpc-source全体(4894ファイル)で誤検知ゼロを実測 |
 
 ## 見送ったルール（検討済み・意図的に未実装）
 
@@ -32,6 +33,11 @@
 - P5(命名規則)向けの事前調査で確認したノード種別: 型宣言は`declTypes` > `declType`(フィールド`name`/`type`)。`name`は通常`identifier`だが、**ジェネリック型では`genericTpl`**(フィールド`entity`=実際の型名、`args`>`genericArg`>`name`=型引数)になる。`type`側は`declClass`(class/object/recordが全部これ。先頭の子トークン`kClass`/`kObject`/`kRecord`で区別)、`declIntf`(interface)、`declHelper`(class helper/record helper)、`type` > `declEnum`(列挙)、`type` > `typeref` > `typerefPtr`(`^T`のポインタ型)。クラス/レコードのフィールドは`declField`(フィールド`name`は複数持ちうる)、可視性は親の`declSection`の`kPrivate`/`kProtected`/`kPublic`/`kPublished`(+`kStrict`)。`class var`は`declVars`/`declVar`になる。
 - P7実装時に確認: `root`の直下は`unit`/`program`/`library`のいずれか、または（`{$i}`で他ファイルに取り込まれる前提の断片の場合）`declTypes`/`declVars`等が直接並ぶ形になる。`inherited Go;`は`exprCall`ではなく`inherited`ノード(`kInherited` + `identifier`)。`ts_node_has_error`(api.h 533行目)で構文エラーの有無を判定できる。
 - P7実装時の実測知見（誤検知対策）: fpc-source全体に当てた初版で190件の誤検知が出た。内訳と対処は (1) 175件が`{$MACRO ON}` + `{$define Rsc := }`によるマクロ展開（tree-sitterは展開しないので消える識別子を「実在しない」と誤認）→ `{$MACRO`を含むファイルでは判定Bを無効化、(2) `uses`が1つも無いファイル（`{$i}`で組み立てられるRTL内部ユニットやinclude断片）→ 「usesが1つ以上あり全て既知」を判定Bの前提条件に、(3) `AssignFile`/`CloseFile`が見つからない → これらは`system`ではなく`objpas`ユニット（objfpc/delphiモードで暗黙にuses）にあるため、`objpas`をデータ生成対象に追加。対処後は誤検知ゼロ。
+- **P9実装時に確認（重要な文法の穴）**: 引数なしの再送出 `raise;` を tree-sitter-pascal v0.10.2 は**構文として受け付けない**。`raise E.Create(..);`（引数あり）は `raise` ノード（フィールド `exception`）になるが、`raise;` は `ERROR` ノード（子に `kRaise`）になる。影響は2つある。
+  - (1) `raise;` を含む部分木を探すコードは `raise` ノード種別だけを見ていると取りこぼす。`kRaise` トークン自体を探す必要がある。
+  - (2) `raise;` は Pascal でごく普通の書き方なので、`ts_node_has_error` によるファイル単位の門番（RAWPACO-HALLUC-001 が採用している方式）を入れると実質的にルールが無効化される。実測では、本ルールの対象APIと `except` の両方を含む fpc-source の182ファイルのうち **111ファイル(61%)** が `ts_node_has_error` で真になった。この `ERROR` ノードは文の位置に局所的に現れるだけで try/except/finally のフィールド構造は保たれる（プローブで確認済み）ため、RAWPACO-STYLE-002 では門番を採用しないことにした。
+- P9実装時の実測知見（誤検知対策）: 最大の誤検知要因は `try ... except FreeAndNil(Result); Raise; end;` という「失敗したら後始末して呼び出し元へ投げ直す」定型だった。これを「try-exceptで保護されている」と数えると、同じAPIを素直に呼んでいる他の箇所が軒並み未保護として報告される（`packages/fcl-db/src/sql/fpsqlparser.pas` だけで12件）。対策として、except節の部分木に `kRaise` があるtryは保護に数えないことにし、fpc-source全体で検知ゼロになった。あわせて「finallyのみのtryは保護に数えない」「except/finally節の中身は保護・未保護のどちらにも数えない（外側にexcept付きtryがある場合のみ保護を維持）」という3状態の伝播を実装している。詳細は `src/Rules/RuleStyle002.pas` 冒頭コメント参照。
+- P9で保留した検知範囲（今後の拡張候補）: `TFileStream.Create` のような修飾付き（`exprDot`）のリソース確保、`SysUtils.StrToInt(..)` のようなユニット修飾された呼び出し、`FileOpen`/`FileClose` 等のハンドルベースAPI（エラーコードを返すため try-except の有無が一貫性の指標になりにくい）はいずれも対象外。対象API名リスト（`CSystemFileApis` / `CSysUtilsApis`）が唯一のチューニングつまみであり、広げると誤検知、狭めると検知漏れになる。
 - P4実装時の設計判断: `RuleRegistry`に登録されるルールインスタンスは`initialization`で一度だけ生成され、`RunLint`が複数ファイルを処理する間ずっと使い回される。RAWPACO-DEPR-001は「ファイル内でdeprecated宣言を集めてから使用箇所を照合する」という2パス処理(ファイル単位の一時的な状態)が必要だが、インスタンスフィールドに状態を持たせるとファイルをまたいで漏れる。これを避けるため`InterestedNodeTypes`を最上位の`root`ノードのみとし、1ファイルにつき1回のCheck呼び出しの中でローカル変数を使って自己完結した探索を行う設計とした(ASTWalker等の共通インフラは無改修)。複数ファイルを1回の実行で渡し、片方だけにdeprecated宣言がある状態で状態漏れがないことを実装時に確認済み。
 - P8実装時に確認: `begin...end`は`block`ノード、try/repeat等の本体は`statements`ノードという**別のノード種別**になるが、いずれもフィールド名を持たず`assignment`/`if`/`ifElse`/`statement`等が直接並ぶ点は同じ。「隣接する2文」を見るルールは両方を`InterestedNodeTypes`に含める必要がある(`statements`だけだと`begin...end`直下では一度もCheckが呼ばれず静かに無効化される。実装時に一度これで全サンプル非検知になり気づいた)。また`Obj := TFoo.Create;`(括弧なし)は`assignment`のrhsが`exprDot`に、`Obj := TFoo.Create();`(括弧あり)は`exprCall`(entity=`exprDot`)になる違いも要考慮。詳細は`src/Rules/RuleDefense002.pas`冒頭コメント参照。
 
@@ -48,7 +54,7 @@
 
 ## 自己lint到達状況
 
-- 本ツール自身のソースへの自己適用: `./src/rawpaco src/*.pas src/Rules/*.pas src/rawpaco.lpr` をローカルで実行し、誤検知・真陽性ともにゼロを確認済み（2026-08-04時点、RAWPACO-DEFENSE-001・RAWPACO-SEC-001・RAWPACO-SEC-002・RAWPACO-DEPR-001・RAWPACO-DEPR-002・RAWPACO-HALLUC-001・RAWPACO-STYLE-001の7ルール）。
+- 本ツール自身のソースへの自己適用: `./src/rawpaco src/*.pas src/Rules/*.pas src/rawpaco.lpr` をローカルで実行し、誤検知・真陽性ともにゼロを確認済み（2026-08-04時点、実装済み9ルール全部）。
 - CIへの自己lintステップ追加: **実施済み**（CLAUDE.mdルール4）。`Makefile`に`selflint`ターゲットを新設し、Linux/Windows両ジョブの最後に追加した。7ルール全部を通した状態で既に警告ゼロを繰り返し確認済みだったため(各ルール実装時に自己lintで都度確認)、`--only`/`--exclude`によるルール個別スコープの段階導入は経ずに一括でCI組み込みを行った。今後新しいルールが自己ソースに誤検知/真陽性を出す場合は、その時点で`--only`/`--exclude`の実装を検討する。
 
 ## tree-sitter本体・tree-sitter-pascalのvendoring方針（確定）
@@ -107,7 +113,7 @@
 
 ## 未着手・保留中
 
-- 設計書 P9（RAWPACO-STYLE-002 エラーハンドリング不統一の近似検知、担当Opus5）が未着手。P8は実装済み（下記参照）。
+- 設計書 P1〜P9 は全て実装済み。
 - `--only` / `--exclude` によるルール個別のオンオフは未実装（設計書5節・8節、担当Sonnet5）。`rawpaco.json` にはルール単位の有効・無効を書くキーを**意図的に設けていない**。ルールのオンオフはルールエンジン側（RuleRegistry のディスパッチ）の仕組みであって命名規則の設定とは層が違うため、`--only`/`--exclude` を実装する際に設定ファイル側のキーもあわせて設計するのがよい。
 
 ## 直近セッションのメモ
