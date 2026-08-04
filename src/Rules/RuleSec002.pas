@@ -6,15 +6,30 @@ unit RuleSec002;
 // docs/RULE_ENGINE_DESIGN.md P3/2.4節2に対応。
 //
 // 対象ノード種別(node-types.json/grammar.jsで確認済み):
-// - `assignment`(フィールド: lhs/operator/rhs)の単純な
-//   `identifier := literalString`の形のみを対象とする。
-//   lhsがvarAssignDef(FPCのinline `for var I := ...`)や、exprDot
-//   (`Obj.Password := 'x'`のようなプロパティ・フィールドへの代入。実務上
-//   はこちらの方がむしろ典型的なシークレットハードコードパターンだが)
-//   である場合は、このルールの最初の実装では意図的にスコープ外とする
-//   (CLAUDE.mdルール8)。理由: exprDotのrhs側から末端の識別子名を
-//   取り出すロジックが別途必要になり、単純な代入検知という第一段の
-//   スコープを超えるため。将来の拡張候補としてHANDOFF.mdに明記する。
+// - `assignment`(フィールド: lhs/operator/rhs)の
+//   `identifier := literalString`、および`exprDot := literalString`
+//   (`Obj.Password := 'x'`のようなプロパティ・フィールドへの代入)の形を
+//   対象とする。
+//   - `exprDot`は`lhs`/`operator`/`rhs`フィールドを持ち、ネストした
+//     `A.B.Password`のような形でも`A.B`側がさらに`exprDot`として`lhs`に
+//     入れ子になるだけで、外側の`exprDot`の`rhs`フィールドは常に末尾の
+//     識別子になる(左結合。実機プローブで検証済み: `Config.Db.
+//     ConnectionString := 'x'` は
+//     `exprDot(lhs: exprDot(lhs: identifier, rhs: identifier),
+//     rhs: identifier)`になる)。そのため再帰は不要で、`exprDot`の`rhs`
+//     フィールドだけを見ればよい。
+//   - シークレットらしさの判定(接尾辞一致)は`rhs`側の末尾識別子のみで行う。
+//     これにより`Edit1.PasswordChar := '*'`(LazarusのTEdit/TCustomEditが
+//     持つ、マスク表示用の1文字を指定する一般的なプロパティで、シークレット
+//     とは無関係)のような、`Password`を含む識別子名の直後に別の語が続く
+//     ケースを自然に誤検知しない(`PasswordChar`は接尾辞一致で`PASSWORD`
+//     とは一致しないため)。実機プローブで文法構造を確認済み。
+//   - 表示用のメッセージには`lhs`ノード全体のテキスト(`Obj.Password`の
+//     ような完全修飾名)を使い、判定にはrhs側の末尾識別子のみを使う
+//     (`CheckNameAndValue`のDisplayName/KeywordText分離を参照)。
+//   lhsがvarAssignDef(FPCのinline `for var I := ...`)である場合は
+//   引き続きスコープ外とする(CLAUDE.mdルール8)。理由: 出現頻度が低い
+//   構文であり、対応の複雑さに見合う価値がないと判断したため。
 //   rhsがliteralString以外(exprBinaryでの連結、関数呼び出しの戻り値等)
 //   も同様に対象外(値の実体追跡は意味解析でありスコープ外)。
 // - `declVar`/`declConst`のdefaultValue付き宣言。
@@ -59,7 +74,8 @@ type
   private
     procedure CheckAssignment(const Node: TSNode; Ctx: TLintContext);
     procedure CheckDecl(const Node: TSNode; Ctx: TLintContext);
-    procedure CheckNameAndValue(const NameText: string; const ValueNode: TSNode; Ctx: TLintContext);
+    procedure CheckNameAndValue(const DisplayName, KeywordText: string;
+      const ValueNode: TSNode; Ctx: TLintContext);
   end;
 
 implementation
@@ -107,6 +123,31 @@ begin
       Exit(True);
 end;
 
+// exprDotノードの`rhs`フィールド(末尾の識別子)を取り出す。ネストした
+// exprDot(`A.B.Password`)でも外側のexprDotのrhsは常に末尾の識別子になる
+// ため、再帰は不要(ユニット冒頭コメント参照)。rhsがidentifier以外
+// (メソッド呼び出しの一部等、通常はここに来る前にexprCall/exprDotの組み
+// 合わせが変わるため稀)の場合はFalseを返し、呼び出し側で対象外とする。
+function TryGetDotRhsIdentifier(const DotNode: TSNode; out RhsNode: TSNode): Boolean;
+var
+  ChildCount, I: LongWord;
+begin
+  Result := False;
+  RhsNode := DotNode; // ダミー初期値
+  ChildCount := ts_node_child_count(DotNode);
+  I := 0;
+  while I < ChildCount do
+  begin
+    if ts_node_field_name_for_child(DotNode, I) = 'rhs' then
+    begin
+      RhsNode := ts_node_child(DotNode, I);
+      Result := ts_node_type(RhsNode) = 'identifier';
+      Exit;
+    end;
+    Inc(I);
+  end;
+end;
+
 function ValueLooksLikePlaceholder(const Value: string): Boolean;
 var
   Upper, Marker: string;
@@ -147,8 +188,9 @@ end;
 procedure TRuleSec002.CheckAssignment(const Node: TSNode; Ctx: TLintContext);
 var
   ChildCount, I: LongWord;
-  LhsNode, RhsNode: TSNode;
-  HasLhs, HasRhs: Boolean;
+  LhsNode, RhsNode, KeywordNode: TSNode;
+  HasLhs, HasRhs, HasKeywordNode: Boolean;
+  LhsType: PAnsiChar;
 begin
   HasLhs := False;
   HasRhs := False;
@@ -175,9 +217,22 @@ begin
   if not (HasLhs and HasRhs) then
     Exit;
 
-  // スコープ限定: 単一識別子への直接代入のみ(varAssignDef/exprDotは対象外。
-  // ユニット冒頭コメント参照)。
-  if ts_node_type(LhsNode) <> 'identifier' then
+  // スコープ限定: 単一識別子への直接代入(`X := ...`)、またはプロパティ・
+  // フィールドへの代入(`Obj.X := ...`、ネスト可)のみ対象とする。
+  // varAssignDefは引き続き対象外(ユニット冒頭コメント参照)。
+  KeywordNode := Node; // ダミー初期値
+  LhsType := ts_node_type(LhsNode);
+  if LhsType = 'identifier' then
+  begin
+    KeywordNode := LhsNode;
+    HasKeywordNode := True;
+  end
+  else if LhsType = 'exprDot' then
+    HasKeywordNode := TryGetDotRhsIdentifier(LhsNode, KeywordNode)
+  else
+    HasKeywordNode := False;
+
+  if not HasKeywordNode then
     Exit;
 
   // スコープ限定: rhsが直接literalStringである場合のみ(連結・関数呼び出し
@@ -185,7 +240,7 @@ begin
   if ts_node_type(RhsNode) <> 'literalString' then
     Exit;
 
-  CheckNameAndValue(Ctx.GetNodeText(LhsNode), RhsNode, Ctx);
+  CheckNameAndValue(Ctx.GetNodeText(LhsNode), Ctx.GetNodeText(KeywordNode), RhsNode, Ctx);
 end;
 
 procedure TRuleSec002.CheckDecl(const Node: TSNode; Ctx: TLintContext);
@@ -246,14 +301,18 @@ begin
   if ts_node_type(ValueNode) <> 'literalString' then
     Exit;
 
-  CheckNameAndValue(Ctx.GetNodeText(NameNode), ValueNode, Ctx);
+  CheckNameAndValue(Ctx.GetNodeText(NameNode), Ctx.GetNodeText(NameNode), ValueNode, Ctx);
 end;
 
-procedure TRuleSec002.CheckNameAndValue(const NameText: string; const ValueNode: TSNode; Ctx: TLintContext);
+// DisplayNameは診断メッセージに表示する完全修飾名(`Obj.Password`等)、
+// KeywordTextは接尾辞一致の判定対象となる末尾の識別子名(`Password`)。
+// 単純な`X := ...`の場合は両者とも同じテキストになる(呼び出し元参照)。
+procedure TRuleSec002.CheckNameAndValue(const DisplayName, KeywordText: string;
+  const ValueNode: TSNode; Ctx: TLintContext);
 var
   RawValueText, Unquoted, Trimmed: AnsiString;
 begin
-  if not NameEndsWithSecretKeyword(NameText) then
+  if not NameEndsWithSecretKeyword(KeywordText) then
     Exit;
 
   RawValueText := Ctx.GetNodeText(ValueNode);
@@ -269,7 +328,7 @@ begin
     Exit;
 
   Ctx.Report(CRuleId,
-    Format('possible hardcoded secret: "%s" is assigned a literal string value', [NameText]),
+    Format('possible hardcoded secret: "%s" is assigned a literal string value', [DisplayName]),
     ValueNode);
 end;
 
