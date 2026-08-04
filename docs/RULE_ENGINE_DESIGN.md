@@ -6,6 +6,47 @@ This document summarizes the overall design of rawpaco's lint rule engine. It is
 
 This document is written on the assumption that Sonnet5 will handle the implementation. Each item's owner is noted at its end; when omitted, Sonnet5 is assumed (per the original request). Items that require complex algorithm design, ambiguous specification judgment calls, or major architectural decisions are explicitly marked "Owner: Opus5".
 
+## Contents
+
+- [0. Assumptions and Constraints](#0-assumptions-and-constraints)
+- [1. Rule Engine API Design](#1-rule-engine-api-design)
+  - [1.1 Overall Architecture](#11-overall-architecture)
+  - [1.2 TSBindings.pas needs to be extended](#12-tsbindingspas-needs-to-be-extended)
+  - [1.3 Traversal Driver (ASTWalker.pas)](#13-traversal-driver-astwalkerpas)
+  - [1.4 Rule Implementation Unit and Interface](#14-rule-implementation-unit-and-interface)
+  - [1.5 Diagnostics and Context](#15-diagnostics-and-context)
+  - [1.6 Execution Flow (pseudocode)](#16-execution-flow-pseudocode)
+- [2. Detection Approach per Problem (of the Five)](#2-detection-approach-per-problem-of-the-five)
+  - [2.1 Inconsistency (naming conventions, inconsistent error handling)](#21-inconsistency-naming-conventions-inconsistent-error-handling)
+  - [2.2 Excessive Defensive Coding](#22-excessive-defensive-coding)
+  - [2.3 Dependency Optimism (Hallucination)](#23-dependency-optimism-hallucination)
+  - [2.4 Overlooked Security](#24-overlooked-security)
+  - [2.5 Outdated Practices (Deprecated APIs from Stale Training Data, etc.)](#25-outdated-practices-deprecated-apis-from-stale-training-data-etc)
+  - [2.6 Summary Table](#26-summary-table)
+- [3. Placement and Execution of positive/negative Samples](#3-placement-and-execution-of-positivenegative-samples)
+- [4. Diagnostic Output Format](#4-diagnostic-output-format)
+  - [4.1 Severity-based exit-code control: adopted, lenient by default](#41-severity-based-exit-code-control-adopted-lenient-by-default-2026-08-04-revised-owner-fable5)
+    - [4.1.1 Severity levels and how they're assigned](#411-severity-levels-and-how-theyre-assigned)
+    - [4.1.2 Per-rule severity, decided concretely (not punted)](#412-per-rule-severity-decided-concretely-not-punted)
+    - [4.1.3 CLI: `--fail-on=`](#413-cli---fail-on)
+    - [4.1.4 Self-lint keeps today's zero-tolerance policy](#414-self-lint-keeps-todays-zero-tolerance-policy--by-explicit-opt-in-not-by-default-inheritance)
+    - [4.1.5 Output formats: severity is always shown, in every mode](#415-output-formats-severity-is-always-shown-in-every-mode)
+    - [4.1.6 Guarding the original concern](#416-guarding-the-original-concern-severity-must-never-substitute-for-false-positive-tuning)
+    - [4.1.7 Backward compatibility: an acknowledged, deliberate break](#417-backward-compatibility-an-acknowledged-deliberate-break)
+- [5. Path to Integrating Self-Linting (the Chicken-and-Egg Problem)](#5-path-to-integrating-self-linting-the-chicken-and-egg-problem)
+- [6. Implementation Priority and Concrete Proposals for the First Several Rules](#6-implementation-priority-and-concrete-proposals-for-the-first-several-rules)
+  - [P1: RAWPACO-DEFENSE-001 Empty except handler (swallowed exception)](#p1-rawpaco-defense-001-empty-except-handler-swallowed-exception)
+  - [P2: RAWPACO-SEC-001 SQL string-concatenation pattern](#p2-rawpaco-sec-001-sql-string-concatenation-pattern)
+  - [P3: RAWPACO-SEC-002 Hardcoded secret-looking strings](#p3-rawpaco-sec-002-hardcoded-secret-looking-strings)
+  - [P4: RAWPACO-DEPR-001 Self-contradictory deprecated-API usage (within the same file)](#p4-rawpaco-depr-001-self-contradictory-deprecated-api-usage-within-the-same-file)
+  - [P5: RAWPACO-STYLE-001 Naming-convention check (config-file based)](#p5-rawpaco-style-001-naming-convention-check-config-file-based)
+  - [P6: RAWPACO-DEPR-002 Detection based on FPC RTL/FCL's list of `deprecated` symbols](#p6-rawpaco-depr-002-detection-based-on-fpc-rtlfcls-list-of-deprecated-symbols)
+  - [P7: RAWPACO-HALLUC-001 Cross-checking against FPC RTL/FCL's list of known symbols](#p7-rawpaco-halluc-001-cross-checking-against-fpc-rtlfcls-list-of-known-symbols)
+  - [P8: RAWPACO-DEFENSE-002 Meaningless nil check right after construction](#p8-rawpaco-defense-002-meaningless-nil-check-right-after-construction)
+  - [P9: RAWPACO-STYLE-002 Inconsistent error handling within the same file (approximation)](#p9-rawpaco-style-002-inconsistent-error-handling-within-the-same-file-approximation)
+- [7. Open Questions / Proposals (things that could be major policy shifts, not decided unilaterally)](#7-open-questions--proposals-things-that-could-be-major-policy-shifts-not-decided-unilaterally)
+- [8. Owner Assignment Summary](#8-owner-assignment-summary)
+
 ## 0. Assumptions and Constraints
 
 rawpaco is a tool that performs **syntax analysis only**, via tree-sitter-pascal, and therefore cannot do the following:
