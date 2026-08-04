@@ -13,20 +13,63 @@ AI-generated code tends to introduce characteristic issues — inconsistent nami
 
 ## 状態 / Status
 
-初期段階（ブートストラップ）。lint ルールは未実装。
-Early bootstrap stage. No lint rules implemented yet.
+lint ルールを9個実装済み（空exceptハンドラ・SQL文字列連結・シークレットのハードコード・自己矛盾する非推奨API使用・FPC RTL/FCLのdeprecatedシンボル使用・実在しないAPI(hallucination)・命名規則・生成直後の無意味なnilチェック・エラーハンドリングの不統一）。CIはLinux/Windows両方でビルド・テストし、本ツール自身のソースへの自己lintも警告ゼロを維持している。ルールごとの詳細・実装状況は [HANDOFF.md](HANDOFF.md) の「実装済みルール一覧」を参照。
+
+9 lint rules are implemented (empty except handlers, SQL string concatenation, hardcoded secrets, self-contradictory deprecated-API use, deprecated FPC RTL/FCL symbols, hallucinated nonexistent APIs, naming conventions, redundant post-Create nil checks, and inconsistent error handling). CI builds and tests on both Linux and Windows, and self-linting (running the tool against its own source) stays at zero warnings. See the "Implemented rule list" table in [HANDOFF.md](HANDOFF.md) for per-rule details.
+
+## 使い方 / Usage
+
+### ビルド / Build
+
+```sh
+make
+```
+
+FPCとgcc（Cコンパイラ）が必要（動作確認はFPC 3.2.2で実施、CIも同バージョン系列を使用）。`vendor/` 配下にvendoringした tree-sitter 本体・tree-sitter-pascal を gcc で静的リンクし、`src/rawpaco`（Windowsでは `src/rawpaco.exe`）を生成する。
+
+Requires FPC and a C compiler (gcc); verified against FPC 3.2.2, which CI also tracks. Statically links the vendored tree-sitter core and tree-sitter-pascal sources under `vendor/` via gcc, producing `src/rawpaco` (`src/rawpaco.exe` on Windows).
+
+### 実行 / Run
+
+```sh
+./src/rawpaco [options] <file.pas> ...
+```
+
+主なオプション / Main options:
+
+- `--config=<path>` — 設定ファイルを明示指定（省略時はカレントディレクトリから親方向へ `rawpaco.json` を自動探索）。詳細は [docs/CONFIG.md](docs/CONFIG.md)。
+  Explicitly specify a config file (otherwise `rawpaco.json` is auto-discovered by searching upward from the current directory). See [docs/CONFIG.md](docs/CONFIG.md).
+- `--format=text|github|json` — 出力形式（既定は `text`）。`github` は GitHub Actions のワークフローコマンド形式でPRにインライン注釈を付け、`json` は他ツール連携向けの機械可読形式。
+  Output format (default `text`). `github` emits GitHub Actions workflow commands for inline PR annotations; `json` is a machine-readable array for other tooling.
+- `--only=<id>[,<id>...]` / `--exclude=<id>[,<id>...]` — 有効化・無効化するルールを絞り込む（同時指定はエラー）。
+  Scope which rules run (mutually exclusive; using both is an error).
+
+診断が1件でもあれば終了コードは `1`。個別の誤検知や意図的な例外は、対象行または直前行に `// rawpaco:ignore <RuleId>` と書くと抑制できる。
+
+Exit code is `1` if there's even one diagnostic. Individual false positives or deliberate exceptions can be suppressed by writing `// rawpaco:ignore <RuleId>` on the target line or the line immediately before it.
+
+### テスト / Test
+
+```sh
+make test      # positive/negativeサンプル・CLIオプションの配線を検証 / verifies positive/negative samples and CLI option wiring
+make selflint  # 本ツール自身のソースをlintし警告ゼロを確認 / lints rawpaco's own source, expecting zero warnings
+```
+
+## ディレクトリ構成 / Directory Layout
+
+- `src/` — ツール本体 / tool source
+- `src/Rules/` — lintルールごとの実装（1ルール=1ユニット） / one unit per lint rule
+- `tests/` — lint ルールごとの positive/negative サンプルとCLIオプションのテスト / positive/negative samples per lint rule, plus CLI option tests
+- `docs/` — 設計ドキュメント（ルールエンジン設計書など） / design documents (rule engine design, etc.)
+- `data/` — `RAWPACO-DEPR-002`/`RAWPACO-HALLUC-001` が参照するFPC RTL/FCLシンボル一覧（静的コミット） / FPC RTL/FCL symbol data used by `RAWPACO-DEPR-002`/`RAWPACO-HALLUC-001` (statically committed)
+- `tools/` — 上記シンボル一覧を再生成するスクリプト / scripts to regenerate the symbol data above
+- `vendor/` — tree-sitter本体・tree-sitter-pascalのvendoringされたソース（バージョン固定） / vendored, version-pinned sources for tree-sitter core and tree-sitter-pascal
 
 ## 実装方針 / Design
 
 - 実装言語: FPC (Object Pascal) / Implementation language: FPC (Object Pascal)
 - 構文解析: tree-sitter-pascal（tree-sitter の C API を cdecl で直接呼び出す） / Parsing: tree-sitter-pascal (calls the tree-sitter C API directly via cdecl)
 - 対象: Delphi/FPC 系 Pascal（Oxygene は対象外） / Scope: Delphi/FPC-family Pascal (Oxygene is out of scope)
-
-## ディレクトリ構成 / Directory Layout
-
-- `src/` — ツール本体 / tool source
-- `tests/` — lint ルールごとの positive/negative サンプル / positive/negative samples per lint rule
-- `docs/` — 設計ドキュメント（ルールエンジン設計書など） / design documents (rule engine design, etc.)
 
 ## 開発ルール / Development Rules
 
