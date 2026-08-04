@@ -47,7 +47,7 @@
 ## 自己lint到達状況
 
 - 本ツール自身のソースへの自己適用: `./src/rawpaco src/*.pas src/Rules/*.pas src/rawpaco.lpr` をローカルで実行し、誤検知・真陽性ともにゼロを確認済み（2026-08-04時点、RAWPACO-DEFENSE-001・RAWPACO-SEC-001・RAWPACO-SEC-002・RAWPACO-DEPR-001・RAWPACO-DEPR-002・RAWPACO-HALLUC-001・RAWPACO-STYLE-001の7ルール）。
-- CIへの自己lintステップ追加: 未実施（ルールが1つしかなく、`--only`/`--exclude`によるルール個別スコープ導入の効果がまだ薄いため見送り。ルールが増えてきたら`docs/RULE_ENGINE_DESIGN.md`5節の手順で段階導入する）。
+- CIへの自己lintステップ追加: **実施済み**（CLAUDE.mdルール4）。`Makefile`に`selflint`ターゲットを新設し、Linux/Windows両ジョブの最後に追加した。7ルール全部を通した状態で既に警告ゼロを繰り返し確認済みだったため(各ルール実装時に自己lintで都度確認)、`--only`/`--exclude`によるルール個別スコープの段階導入は経ずに一括でCI組み込みを行った。今後新しいルールが自己ソースに誤検知/真陽性を出す場合は、その時点で`--only`/`--exclude`の実装を検討する。
 
 ## tree-sitter本体・tree-sitter-pascalのvendoring方針（確定）
 

@@ -24,6 +24,9 @@ jobs:
       - name: Run rule sample tests
         run: make test
 
+      - name: Self-lint (CLAUDE.md rule 4)
+        run: make selflint
+
   build-windows:
     runs-on: windows-latest
     steps:
@@ -144,3 +147,7 @@ jobs:
       - name: Run rule sample tests
         shell: bash
         run: bash tests/run_tests.sh
+
+      - name: Self-lint (CLAUDE.md rule 4)
+        shell: bash
+        run: ./src/rawpaco.exe src/*.pas src/Rules/*.pas src/rawpaco.lpr

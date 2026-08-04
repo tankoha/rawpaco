@@ -22,7 +22,7 @@ RULE_SOURCES := src/Diagnostics.pas src/RuleRegistry.pas src/ASTWalker.pas \
                 src/Rules/RuleHalluc001.pas src/Rules/RuleStyle001.pas \
                 src/Rules/AllRules.pas
 
-.PHONY: all clean test
+.PHONY: all clean test selflint
 
 all: src/rawpaco
 
@@ -45,6 +45,12 @@ src/rawpaco: src/rawpaco.lpr src/TSBindings.pas $(RULE_SOURCES) $(TS_OBJ) $(TSP_
 
 test: src/rawpaco
 	bash tests/run_tests.sh
+
+# CLAUDE.mdルール4: 本ツール自身のソースをlintし警告ゼロを維持する。
+# rawpacoは診断が1件でもあれば終了コード1を返す(src/LintDriver.pas)ため、
+# このターゲット自体が失敗することがCIでの検知になる。
+selflint: src/rawpaco
+	./src/rawpaco src/*.pas src/Rules/*.pas src/rawpaco.lpr
 
 clean:
 	rm -rf $(BUILD)
