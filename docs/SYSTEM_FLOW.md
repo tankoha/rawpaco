@@ -18,17 +18,16 @@ rawpacoがどのようにCIへ組み込まれ、開発ループに影響する�
 flowchart LR
     Dev["開発者/AIがコードをpush"] --> GHA["GitHub Actions起動\n(.github/workflows/ci.yml)"]
     GHA --> Build["make\nvendor Cソースをgccでコンパイル\n→ FPCでrawpacoを静的リンクビルド"]
-    Build --> Run["rawpaco --format=github src/*.pas"]
+    Build --> Run["rawpaco src/*.pas\n(selflintターゲット)"]
     Run --> Diag{"診断結果は0件か？"}
     Diag -->|"0件"| Pass["終了コード0\nビルド成功"]
-    Diag -->|"1件以上"| Fail["終了コード1\nPRにインライン注釈(github形式)"]
-    Fail --> FixOrIgnore{"true positiveか？"}
-    FixOrIgnore -->|"true positive"| Fix["コード側を修正"]
-    FixOrIgnore -->|"意図的な例外"| Ignore["// rawpaco:ignore <RuleId>\nを付与"]
+    Diag -->|"1件以上"| Fail["終了コード1\ntext形式で標準出力に列挙"]
+    Fail --> Fix["コード側を修正\n(true positiveとして扱う)"]
     Fix --> Dev
-    Ignore --> Dev
     Pass --> Merge["レビュー・マージ"]
 ```
+
+**実装状況の注記（2026-08-04、レビューで判明）**: `--format=github` オプション、PRへのインライン注釈、`// rawpaco:ignore <RuleId>` による抑制コメントは、`docs/RULE_ENGINE_DESIGN.md` 4節で設計されたが**未実装**（詳細はHANDOFF.mdの「未着手・保留中」参照）。実際に出力できるのは `text` 形式のみで、誤検知が出た場合の逃げ道が無いため、現状は「見つかった診断は必ずコード側を直す」運用になっている。上の図は実装済みの経路のみを描いている。
 
 ## 2. rawpaco内部の実行フロー
 
@@ -58,11 +57,13 @@ flowchart TD
     Report --> DiagList["TDiagnosticをFDiagnosticsへ蓄積"]
     DiagList --> Walk
 
-    Walk -->|"走査完了"| Collect["AllDiagnosticsへ集約\nts_tree_deleteで解放"]
-    Collect --> FileLoop
-    FileLoop -->|"全ファイル完了"| Format["出力フォーマッタ\ntext / github / json"]
-    Format --> ExitCode["終了コード決定\n診断0件→0、1件以上→1"]
+    Walk -->|"走査完了"| PrintFile["そのファイルのCtx.Diagnosticsを\ntext形式で即座にWriteLn\n(ファイルをまたいだ集約はしない)"]
+    PrintFile --> FreeTree["ts_tree_deleteで解放"]
+    FreeTree --> FileLoop
+    FileLoop -->|"全ファイル完了"| ExitCode["終了コード決定\n診断0件かつ読み込みエラー無し→0、\nそれ以外→1"]
 ```
+
+（`--format`オプション・`github`/`json`形式は未実装。上記の通り実際は1ファイルずつ`text`形式で標準出力に書き出す方式。詳細は前節の注記を参照。）
 
 ## 3. ルール実装単位の静的関係
 
