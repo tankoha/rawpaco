@@ -134,6 +134,17 @@
 - テストは`tests/run_tests.sh`の`format_case`/`suppression_case`、フィクスチャは`tests/suppression/`(`ignore_same_line.pas`/`ignore_previous_line.pas`/`wrong_rule_id.pas`、いずれもRAWPACO-DEFENSE-001を検証対象ルールとして流用)。
 - 自己lint(`make selflint`)は変更後も警告ゼロを確認済み。CI側の変更は不要(`make test`/`bash tests/run_tests.sh`が新規テストケースも自動的に拾う)。
 
+## 重要度別(warning/error)の終了コード制御について(要実装)
+
+設計書7節の保留事項。9ルール実装済みになった時点でFable5がセカンドオピニオンとして検討し、当初は「導入しない」で決着したが、プロジェクトオーナーのレビューで「rawpaco自身の自己lintには無妥協方針が正しいが、下流の利用プロジェクトにはそれぞれ異なるCI方針があり、新規ツールとして採用障壁を下げるべき」という指摘を受け、**導入する・既定は寛容**方針に改訂した(設計書4.1節、2026-08-04改訂)。
+
+未実装(このエントリは設計のみで、`.pas`側は未着手)。実装時に必須の要点(詳細は設計書4.1節):
+
+- `TSeverity`に`svError`を追加。実装済み9ルールの重要度は設計書4.1.2節の表のとおり具体的に決め打ち済み(Error=DEFENSE-001/SEC-001/SEC-002/HALLUC-001、Warning=DEPR-001/DEPR-002/STYLE-001/DEFENSE-002/STYLE-002)。
+- CLIに`--fail-on=error|warning`(既定`error`)を追加。`--fail-on=warning`が「激辛モード」で従来の「診断1件でも終了コード1」を再現する。
+- **`Makefile`の`selflint`ターゲットに`--fail-on=warning`を追加すること(この変更と同じコミットで。忘れると自己lintのCIゲートが5ルール分静かに緩む)。** `tests/run_tests.sh`の終了コードを見ているテストケースも同様に監査が必要。
+- `text`/`github`/`json`いずれの形式でも重要度は`--fail-on`の値に関わらず常に表示する。
+
 ## 直近セッションのメモ
 
 - FPC開発環境をローカルに導入済み（Ubuntu 24.04、apt経由: fpc 3.2.2+dfsg-32, fpc-source, lazarus 3.0）。

@@ -218,7 +218,88 @@ With GitHub Actions usage as the primary target, the following three formats are
 - `github`: emits one line per diagnostic in GitHub Actions' workflow-command format, `::warning file=<file>,line=<line>,col=<column>::[<RuleId>] <message>`. This attaches inline annotations directly to the PR diff view.
 - `json`: an array of `[{"ruleId":..,"file":..,"line":..,"column":..,"severity":..,"message":..}, ...]`. A machine-readable format anticipating integration with other tools and, potentially, the GitHub Annotations API in the future.
 
-**Exit code**: `1` if there is even a single diagnostic, `0` if there are none. As the flip side of CLAUDE.md rule 5 (prioritize avoiding false positives), the policy is that once something has been adopted as a rule, "warning = needs fixing" is meant to be a strong signal; exit-code control weighted by warning/error severity (e.g. letting warnings through) is not introduced for now (severity-based threshold control is noted as a future extension candidate in section 7).
+**Exit code**: graduated by severity, lenient by default. See 4.1 for the resolved design; the original "1 if any diagnostic, 0 otherwise" contract survives only as the behavior of the explicit `--fail-on=warning` ("spicy mode") opt-in described there.
+
+### 4.1 Severity-based exit-code control: adopted, lenient by default (2026-08-04, revised; Owner: Fable5)
+
+**Revision history of this subsection**: section 7 originally deferred this question while rawpaco had zero implemented rules. Once 9 rules existed, a first pass at this subsection (also by Fable5) concluded "do not adopt," reasoning purely from measured false-positive confidence across the 9 shipped rules. The project owner reviewed that call and pushed back — not on the evidence (the owner agreed the 9-rules false-positive data was read correctly), but on the framing: self-lint's zero-tolerance policy is correct *for rawpaco's own use of itself*, but rawpaco is a brand-new, adoption-stage tool whose downstream consumers each carry their own CI risk tolerance, and a tool that only knows how to be a hard gate raises its own adoption barrier unnecessarily. That reframing is accepted, and this subsection is rewritten (not appended to) to reflect it.
+
+**Decision: adopt severity-based exit-code control, default posture lenient, with an explicit strict/"spicy" opt-in that preserves today's behavior exactly.** The two positions turn out not to be in tension once "confidence a rule is correct" and "how urgent is it to act on today" are treated as separate axes — see 4.1.6. The evidence from the first pass (all 9 rules independently tuned to zero measured false positives against the full fpc-source corpus) is still true and still matters, just for a different question: it's why every one of the 9 rules is eligible to ship at all, not for how blocking each one should default to.
+
+#### 4.1.1 Severity levels and how they're assigned
+
+`TSeverity` gains its long-deferred second value: `TSeverity = (svWarning, svError)` in `src/Diagnostics.pas` (the comment there already anticipated this exact addition and named the reason it was withheld until now — no rule could yet be confidently sorted into "must always block CI" vs. "heads-up"; section 4.1.2 makes that sort explicit).
+
+Assignment is a **hardcoded per-rule constant chosen by the rule's author at implementation time**, mirroring how `RuleId` already works in every rule unit today (e.g. `src/Rules/RuleDefense001.pas` declares `CRuleId = 'RAWPACO-DEFENSE-001'` and passes it to `Ctx.Report`). Concretely:
+- `IRawpacoRule` (in `src/RuleRegistry.pas`) gains `function Severity: TSeverity;`, parallel to its existing `RuleId`/`Description`, so the severity is introspectable (future `--list-rules`-style tooling, docs generation, etc.).
+- Each rule unit declares a `CSeverity` constant next to its existing `CRuleId` and returns it from `Severity`.
+- `TLintContext.Report` (in `src/Diagnostics.pas`) gains a `Severity: TSeverity` parameter, so every call site (e.g. `Ctx.Report(CRuleId, CSeverity, Message, Node)`) states its severity the same explicit way it already states its rule ID — no rule can "forget" to set one, and there's no runtime override path for a user to reassign a rule's severity (see 4.1.6 for why that's deliberate).
+
+This is *not* a config-file option (`rawpaco.json`) and *not* a CLI per-rule override. Severity is a property of the rule itself, decided once by whoever wrote the rule and justified in that rule's header comment per CLAUDE.md rule 8 (mirroring how each rule file already documents its false-positive-risk reasoning) — the same layering principle HANDOFF.md already states for `--only`/`--exclude` vs. `rawpaco.json` (CLI flags for what varies per invocation, config for what a project fixes for itself) extends naturally here: severity is neither of those, it's a fact about the rule.
+
+#### 4.1.2 Per-rule severity, decided concretely (not punted)
+
+Severity is assigned by **consequence-of-inaction category**, not by detection confidence (all 9 rules meet the same zero-measured-false-positive bar regardless of tier — see 4.1.6). "Error" means: a typical adopter would want this to block a merge by default. "Warning" means: worth surfacing and eventually fixing, but not urgent enough to justify blocking by default for a project that hasn't opted into strictness.
+
+| Rule | Severity | Why |
+|---|---|---|
+| RAWPACO-DEFENSE-001 (empty except) | **Error** | Swallows a real failure silently; the code proceeds as if nothing happened. Also double-counted under security (2.4 item 3) for the same reason — hiding an anomaly is an active harm, not a style preference. |
+| RAWPACO-SEC-001 (SQL string concatenation) | **Error** | SQL-injection-shaped pattern. Security-category rules default to blocking. |
+| RAWPACO-SEC-002 (hardcoded secrets) | **Error** | A credential committed to source. Security-category rules default to blocking. |
+| RAWPACO-DEPR-001 (self-contradictory deprecated usage) | Warning | The flagged API still works today; this is an internal-consistency nudge ("you deprecated this yourself and kept calling it"), not a live defect. |
+| RAWPACO-DEPR-002 (RTL `deprecated` symbol usage) | Warning | Deprecated-but-functioning RTL API; a forward-looking migration signal, not something broken right now. |
+| RAWPACO-HALLUC-001 (nonexistent RTL/FCL identifier) | **Error** | This is the tool's flagship "hallucination" defect category (problem #3 of the five in section 0/2.3): the referenced symbol is confirmed absent from the cross-checked RTL/FCL symbol table, which typically means the code as written either fails to compile or silently resolves to the wrong overload. Treated as a certain defect, not a nit. |
+| RAWPACO-STYLE-001 (naming convention) | Warning | A project-specific preference (and already reconfigurable via `rawpaco.json`'s `naming.*` keys), not a correctness issue. |
+| RAWPACO-DEFENSE-002 (nil check after construction) | Warning | Dead/noisy code, but unlike DEFENSE-001 it doesn't hide a failure — the check is merely redundant, not actively concealing anything. |
+| RAWPACO-STYLE-002 (inconsistent error handling, approximation) | Warning | Explicitly documented (2.1, and its own P9 entry in section 6) as a loose, same-file heuristic approximation of a problem that isn't fully decidable from syntax — advisory in character by the design's own admission, independent of its measured false-positive rate. |
+
+Net: 4 rules default to Error (DEFENSE-001, SEC-001, SEC-002, HALLUC-001), 5 default to Warning (DEPR-001, DEPR-002, STYLE-001, DEFENSE-002, STYLE-002). Both `SEC-*` rules are Error; both `STYLE-*` and both `DEPR-*` rules are Warning; `DEFENSE-*` splits on whether the pattern actively hides a failure (001) or is merely redundant code (002) — the split is by what the pattern *does*, not by category label alone.
+
+#### 4.1.3 CLI: `--fail-on=`
+
+A new option, `--fail-on=error|warning` (default `error`), sets the minimum severity that causes a nonzero exit code. `TSeverity`'s declared order (`svWarning` < `svError`) makes this a threshold: `--fail-on=error` (default) exits `1` only if at least one **Error**-tier diagnostic survives filtering and suppression; `--fail-on=warning` exits `1` if *any* diagnostic (Warning or Error) survives — this reproduces today's "1 if any diagnostic, 0 otherwise" contract exactly, and is the mode the project owner calls "spicy mode" (激辛モード): the CLI spelling is `--fail-on=warning`, with "spicy mode" documented as its colloquial name (in `--help`/usage text and this doc) rather than a second flag, so there is exactly one parser path and one set of "unknown value" edge cases to validate — consistent with how `--only`/`--exclude`'s combined-use ambiguity was resolved by rejecting it outright rather than guessing (`src/rawpaco.lpr`). An unrecognized `--fail-on=` value is a hard error (exit code 2), following the exact pattern already used by `Diagnostics.ParseOutputFormat` for `--format=` (CLAUDE.md rule 5: unknown values are never silently ignored or coerced).
+
+`--fail-on` composes with the existing flags without special-casing: `--only=`/`--exclude=` decide which rules run at all (and thus which diagnostics can exist); the suppression-comment mechanism (`// rawpaco:ignore`) removes specific diagnostics before anything else sees them; `--fail-on` is evaluated last, purely over whatever diagnostics remain, and never changes which diagnostics are computed or displayed — only whether their presence flips the exit code. `--format=` is fully orthogonal (4.1.5).
+
+#### 4.1.4 Self-lint keeps today's zero-tolerance policy — by explicit opt-in, not by default inheritance
+
+This is the constraint the owner was explicit must not regress, so it is stated as a hard requirement, not left to convention: **rawpaco's own self-lint is one particular downstream consumer of rawpaco, with its own CI policy (CLAUDE.md rule 4: keep warning count at zero) that predates and is independent of whatever default posture is right for arbitrary third-party adopters.** Under lenient-by-default, self-lint must not rely on the default — it must pass `--fail-on=warning` explicitly.
+
+Concretely, `Makefile`'s `selflint` target currently reads (verified in this repo, not edited by this design pass):
+
+```
+selflint: src/rawpaco
+	./src/rawpaco src/*.pas src/Rules/*.pas src/rawpaco.lpr
+```
+
+Whoever implements this design **must** change that line, in the same change that introduces default-lenient severity (not as a follow-up), to:
+
+```
+selflint: src/rawpaco
+	./src/rawpaco --fail-on=warning src/*.pas src/Rules/*.pas src/rawpaco.lpr
+```
+
+Shipping the severity feature without this Makefile edit would silently downgrade CI's self-lint gate — 5 of the 9 rules (4.1.2) would stop being able to fail the build the moment the default flips, with no error or warning that this happened. That is exactly the silent regression the owner flagged as unacceptable, so it is called out here as a blocking implementation checklist item rather than an implicit consequence to notice later. The same audit applies to `tests/run_tests.sh`'s exit-code assertions (`flag_case`/`flag_error_case`/etc.) — any test whose intent is "assert this diagnostic would fail a CI build" needs `--fail-on=warning` added explicitly, since the default it was implicitly relying on is changing.
+
+#### 4.1.5 Output formats: severity is always shown, in every mode
+
+Regardless of `--fail-on`, every diagnostic's severity is always visible in all three formats — `--fail-on` only ever changes the exit code, never what gets printed or hidden. This was the non-negotiable point from the first pass of this design and it carries over unchanged: a rule being Warning-tier must never mean its diagnostics go quiet, only that they don't block by themselves.
+
+- `text`: the previously-hardcoded literal `warning:` becomes the diagnostic's actual severity word (`error:`/`warning:`), matching gcc/eslint conventions where both words already carry meaning: `<file>:<line>:<column>: error: <message> [<RuleId>]`.
+- `github`: emits GitHub Actions' native `::error ...::` workflow command for Error-tier diagnostics and `::warning ...::` for Warning-tier (both forms already exist in the Actions workflow-command syntax this design targets), giving PR reviewers the red/yellow visual distinction GitHub already renders for free — a direct benefit of finally having two tiers, not just a pass-through of the word.
+- `json`: the `"severity"` field (already implemented, structurally ready — `Diagnostics.SeverityName` already has a `case Sev of svWarning: ...` with a fallback branch) emits `"error"`/`"warning"` instead of always `"warning"`.
+
+#### 4.1.6 Guarding the original concern: severity must never substitute for false-positive tuning
+
+The first pass of this design raised a real risk: once a "fires but doesn't block" tier exists, it becomes tempting to reach for it instead of doing the harder work of tuning a rule to true confidence — inverting CLAUDE.md rule 5's "when in doubt, let it go" into "when in doubt, ship it as a warning." Reframing the default posture as adoption-friendly doesn't make that risk disappear; it changes *why* severity exists but not the incentive for misusing it, so the guard has to be explicit rather than assumed away.
+
+**The guard: severity encodes consequence-of-inaction, never confidence-in-detection, and the false-positive bar is unconditional across both tiers.** Concretely: a rule may not be marked Warning as a way to ship a shakier or less-tuned heuristic — a rule that cannot be tuned to the same near-zero-measured-false-positive standard the current 9 rules meet (section 6's per-rule "False-positive risk" ratings, and where feasible the same large-corpus validation HANDOFF.md records for DEPR-002/HALLUC-001/STYLE-002/SEC-002) does not ship at all, at either severity, per CLAUDE.md rule 5 — full stop, unchanged by this section. Severity is decided only *after* a rule already clears that bar, and answers a different question entirely: assuming the diagnostic is correct, how urgent is it? A rule's header comment (CLAUDE.md rule 8) should therefore justify severity and false-positive risk as two separate statements, not one — conflating them ("marked Warning because we're not fully sure") is the exact failure mode this guard exists to name and block.
+
+**This is still a real leftover risk, not a fully closed one**: nothing mechanically prevents a future rule author from misapplying this distinction, the same way nothing mechanically prevents any other CLAUDE.md rule from being misapplied — the guard is a documented review discipline, not a compiler check. It is judged sufficient because it makes the misuse visible and nameable (a reviewer can ask "is this Warning because it's low-urgency, or because you're not sure it's right?" and the second answer is a hard no) rather than because it makes misuse impossible.
+
+#### 4.1.7 Backward compatibility: an acknowledged, deliberate break
+
+This is a conscious breaking change to the CLI's default exit-code behavior — previously, any diagnostic exited `1`; by default it now takes an Error-tier diagnostic to do so. It is not preserved as the default. This is accepted because: (a) rawpaco is `0.0.1-dev` with no established external adopters yet, so the cost of changing a default is at its lowest point right now and will only grow later; (b) the owner's explicit rationale is that an unconditionally strict default is itself an adoption barrier for a brand-new tool, and shipping the friendlier default before anyone depends on the stricter one avoids ever having to make this break later, at higher cost. Every internal consumer of the old strict contract — rawpaco's own self-lint (4.1.4) and any exit-code-asserting tests — must opt back in via `--fail-on=warning` explicitly; nothing about this change is silent or implicit for them.
 
 **Inline suppression comment**: to handle individual false positives and deliberate exceptions, if `// rawpaco:ignore <RuleId>` appears on the target line or the line immediately before it, the diagnostic for that `RuleId` on that line is suppressed. Working from the premise that false positives can never be reduced to zero (CLAUDE.md rule 5 says "prioritize avoiding," not "guarantee"), this was judged essential as an escape hatch so the tool can realistically be run as a CI blocker. The recommended operating rule when using a suppression comment is to also note "why it's being suppressed"; this is something that could be added to `README.md`/`CLAUDE.md` in the future (this design doc only proposes it). (Owner: Sonnet5)
 
@@ -302,7 +383,7 @@ Prioritized by how easy it is to avoid false positives, implementation simplicit
 The following were noticed during this review but amount to deleting existing rules or drastically changing scope, so they are left as proposals rather than decided outright.
 
 - **Detecting naming-convention/idiom drift across sessions (commit history)**: as noted in 2.1, this is fundamentally out of reach for single-file syntax analysis. There's room to consider a future "rawpaco extended mode" that integrates with `git log`/`git blame` and aggregates across multiple files/commits, but this would change rawpaco's character from a "static analysis tool" to a "repository analysis tool," so it would need a fresh design decision if ever pursued.
-- **Severity-based (warning/error) exit-code control**: section 4 kept things simple with "exit code 1 for even one diagnostic," but as operation matures and the number of rules grows, there may be a desire for graduated severity control — "this rule is just a heads-up, don't fail CI for it." At the time of writing there are zero rules, so the need for this can't yet be judged, and introducing it is deferred.
+- ~~**Severity-based (warning/error) exit-code control**~~: resolved, see section 4.1 (Owner: Fable5). Decision: **adopted**, default posture lenient (only Error-tier diagnostics fail the build by default; `--fail-on=warning`/"spicy mode" restores today's "any diagnostic fails" behavior exactly, and is what rawpaco's own self-lint must use). Revised after project-owner review of an earlier "not adopted" pass — see 4.1's revision history for why the framing changed.
 - **Writing the suppression-comment operating rule into CLAUDE.md/README.md**: the operating rule mentioned in section 4 — "write a reason when using a suppression comment" — is in the spirit of CLAUDE.md rule 8 (comments preserve the "why"), but adding to CLAUDE.md itself amounts to establishing a new rule, so this was left as a proposal rather than done in this session.
 - **Broadening CLAUDE.md rule 1's scope to "external C libraries in general"** (a further generalization beyond the small edit already made in this session): this session only made the minimal clarification that "tree-sitter's API is also covered." If the possibility of adding other external C libraries comes up in the future, consider generalizing the rule's wording further.
 
