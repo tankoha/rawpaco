@@ -15,6 +15,10 @@ type
   IRawpacoRule = interface
     function RuleId: string;
     function Description: string;
+    // 設計書4.1.1節。ルール自身の性質として固定される重要度(CLIやrawpaco.json
+    // からの上書きは設けない。理由は4.1.1/4.1.6節参照)。将来の--list-rules的な
+    // ツーリング向けにRuleId/Descriptionと並べてintrospectable にしておく。
+    function Severity: TSeverity;
     function InterestedNodeTypes: TStringArray;
     procedure Check(const Node: TSNode; Ctx: TLintContext);
   end;

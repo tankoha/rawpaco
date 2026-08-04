@@ -150,4 +150,8 @@ jobs:
 
       - name: Self-lint (CLAUDE.md rule 4)
         shell: bash
-        run: ./src/rawpaco.exe src/*.pas src/Rules/*.pas src/rawpaco.lpr
+        # --fail-on=warning(設計書4.1.4節): 重要度別終了コード制御の既定は
+        # 寛容になったため、自己lintは明示的に激辛モードを指定して従来通り
+        # 診断1件でも失敗する方針を維持する(Makefileのselflintターゲットと
+        # 同じ理由。Linux側はmake selflint経由なのでそちらに実装済み)。
+        run: ./src/rawpaco.exe --fail-on=warning src/*.pas src/Rules/*.pas src/rawpaco.lpr

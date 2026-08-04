@@ -11,7 +11,12 @@ uses
 // 隠してしまい、本関数内でFormat()による文字列整形が必要になった際に
 // 気付きにくい形で壊れるため(パラメータ名がグローバル関数名と衝突する
 // FPCの通常のスコープ規則)。
-function RunLint(const FileNames: array of string; OutFormat: TOutputFormat): Integer;
+// MinFailSeverity: 設計書4.1.3節の`--fail-on`しきい値。既定はsvError
+// (rawpaco.lprのCLIパース側が既定値'error'を解決してここに渡す。このユニット
+// 自身はCLIオプションの存在を知らない、というRuleRegistry.SetRuleFilter等
+// 既存の役割分担を踏襲)。
+function RunLint(const FileNames: array of string; OutFormat: TOutputFormat;
+  MinFailSeverity: TSeverity): Integer;
 
 implementation
 
@@ -32,7 +37,8 @@ begin
   end;
 end;
 
-function RunLint(const FileNames: array of string; OutFormat: TOutputFormat): Integer;
+function RunLint(const FileNames: array of string; OutFormat: TOutputFormat;
+  MinFailSeverity: TSeverity): Integer;
 var
   Parser: TSParser;
   Tree: PTSTree;
@@ -105,7 +111,10 @@ begin
         WriteLn(FormatDiagnosticsJson(AllDiags));
     end;
 
-    if (AllDiags.Count > 0) or HadReadError then
+    // 設計書4.1.3節: --fail-onはどの診断が出力されるかには一切影響せず、
+    // 集約済みのAllDiags(抑制済み)に対してしきい値以上のものが1件でも
+    // あるかどうかだけを見る。
+    if HasDiagnosticAtOrAbove(AllDiags, MinFailSeverity) or HadReadError then
       Result := 1
     else
       Result := 0;

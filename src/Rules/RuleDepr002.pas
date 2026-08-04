@@ -49,6 +49,7 @@ type
   public
     function RuleId: string;
     function Description: string;
+    function Severity: TSeverity;
     function InterestedNodeTypes: TStringArray;
     procedure Check(const Node: TSNode; Ctx: TLintContext);
   end;
@@ -60,6 +61,10 @@ uses
 
 const
   CRuleId = 'RAWPACO-DEPR-002';
+  // 設計書4.1.2節: 検知対象のRTL/FCLシンボルは今も動作する非推奨API。
+  // 今すぐ壊れているわけではない前向きな移行シグナルなので、既定では
+  // CIを落とさないWarning階層。
+  CSeverity = svWarning;
 
 type
   TNameSet = specialize TDictionary<string, Boolean>;
@@ -161,10 +166,10 @@ procedure TDepr002Scan.ReportSymbol(const Node: TSNode; const AUnitName, Name: s
   const Hint: string);
 begin
   if Hint = '' then
-    FCtx.Report(CRuleId,
+    FCtx.Report(CRuleId, CSeverity,
       Format('use of "%s", which is deprecated in FPC unit %s', [Name, AUnitName]), Node)
   else
-    FCtx.Report(CRuleId,
+    FCtx.Report(CRuleId, CSeverity,
       Format('use of "%s", which is deprecated in FPC unit %s (%s)', [Name, AUnitName, Hint]), Node);
 end;
 
@@ -321,6 +326,11 @@ end;
 function TRuleDepr002.RuleId: string;
 begin
   Result := CRuleId;
+end;
+
+function TRuleDepr002.Severity: TSeverity;
+begin
+  Result := CSeverity;
 end;
 
 function TRuleDepr002.Description: string;

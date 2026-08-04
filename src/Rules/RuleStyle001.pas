@@ -58,6 +58,7 @@ type
   public
     function RuleId: string;
     function Description: string;
+    function Severity: TSeverity;
     function InterestedNodeTypes: TStringArray;
     procedure Check(const Node: TSNode; Ctx: TLintContext);
   end;
@@ -69,6 +70,10 @@ uses
 
 const
   CRuleId = 'RAWPACO-STYLE-001';
+  // 設計書4.1.2節: プロジェクト固有の好み(かつrawpaco.jsonの`naming.*`で
+  // 再設定可能)であり、正しさの問題ではない。既定ではCIを落とさない
+  // Warning階層。
+  CSeverity = svWarning;
 
 function FindFieldChild(const Node: TSNode; const FieldName: string; out Child: TSNode): Boolean;
 var
@@ -152,11 +157,11 @@ begin
   if MatchesAnyPrefix(Name, Prefixes) then Exit;
 
   if Length(Prefixes) = 1 then
-    Ctx.Report(CRuleId,
+    Ctx.Report(CRuleId, CSeverity,
       Format('%s name "%s" does not start with the expected prefix %s',
         [NamingCategoryLabel(Category), Name, PrefixListText(Prefixes)]), NameNode)
   else
-    Ctx.Report(CRuleId,
+    Ctx.Report(CRuleId, CSeverity,
       Format('%s name "%s" does not start with any of the expected prefixes %s',
         [NamingCategoryLabel(Category), Name, PrefixListText(Prefixes)]), NameNode);
 end;
@@ -288,6 +293,11 @@ end;
 function TRuleStyle001.RuleId: string;
 begin
   Result := CRuleId;
+end;
+
+function TRuleStyle001.Severity: TSeverity;
+begin
+  Result := CSeverity;
 end;
 
 function TRuleStyle001.Description: string;

@@ -48,10 +48,13 @@ test: src/rawpaco
 	bash tests/run_tests.sh
 
 # CLAUDE.mdルール4: 本ツール自身のソースをlintし警告ゼロを維持する。
-# rawpacoは診断が1件でもあれば終了コード1を返す(src/LintDriver.pas)ため、
-# このターゲット自体が失敗することがCIでの検知になる。
+# --fail-on=warningが必須(設計書4.1.4節): 重要度別終了コード制御の既定は
+# 寛容(error階層のみが既定でビルドを落とす)になったが、自己lintは
+# 従来どおりの無妥協な方針(診断1件でも失敗)を維持する必要があるため、
+# 既定に頼らず明示的に激辛モードを指定する。これを忘れると9ルール中
+# 5ルール(Warning階層)がこのゲートを静かに素通りするようになる。
 selflint: src/rawpaco
-	./src/rawpaco src/*.pas src/Rules/*.pas src/rawpaco.lpr
+	./src/rawpaco --fail-on=warning src/*.pas src/Rules/*.pas src/rawpaco.lpr
 
 clean:
 	rm -rf $(BUILD)

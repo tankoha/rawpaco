@@ -45,6 +45,7 @@ type
   public
     function RuleId: string;
     function Description: string;
+    function Severity: TSeverity;
     function InterestedNodeTypes: TStringArray;
     procedure Check(const Node: TSNode; Ctx: TLintContext);
   end;
@@ -53,6 +54,9 @@ implementation
 
 const
   CRuleId = 'RAWPACO-DEFENSE-002';
+  // 設計書4.1.2節: DEFENSE-001と異なり失敗を握りつぶしてはいない。単に
+  // 冗長なコードというだけなので、既定ではCIを落とさないWarning階層。
+  CSeverity = svWarning;
 
 // assignmentのrhsノードが `<何か>.Create` または `<何か>.Create(...)` の
 // 形かどうかを見る(括弧の有無で exprDot 直接 / exprCall 経由 の2パターン
@@ -224,6 +228,11 @@ begin
   Result := CRuleId;
 end;
 
+function TRuleDefense002.Severity: TSeverity;
+begin
+  Result := CSeverity;
+end;
+
 function TRuleDefense002.Description: string;
 begin
   Result := 'redundant Assigned() check immediately after a constructor call (FPC constructors do not return nil)';
@@ -264,7 +273,7 @@ begin
         if TryGetCreateAssignmentTarget(Current, Ctx, AssignTarget) and
            TryGetAssignedCheckTarget(Next, Ctx, CheckTarget) and
            (AssignTarget = CheckTarget) then
-          Ctx.Report(CRuleId,
+          Ctx.Report(CRuleId, CSeverity,
             'Assigned() check right after a constructor call is always true and can be removed',
             Next);
       end;

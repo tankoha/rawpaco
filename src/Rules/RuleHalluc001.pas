@@ -57,6 +57,7 @@ type
   public
     function RuleId: string;
     function Description: string;
+    function Severity: TSeverity;
     function InterestedNodeTypes: TStringArray;
     procedure Check(const Node: TSNode; Ctx: TLintContext);
   end;
@@ -68,6 +69,11 @@ uses
 
 const
   CRuleId = 'RAWPACO-HALLUC-001';
+  // 設計書4.1.2節: 参照先シンボルがRTL/FCLシンボル一覧に存在しないと
+  // 確認済みであり、多くの場合コンパイル失敗か誤ったオーバーロード解決を
+  // 意味する確定的な欠陥。hallucination(5問題点の1つ)の旗艦カテゴリとして
+  // 既定でCIを落とすError階層とする。
+  CSeverity = svError;
 
 type
   TNameSet = specialize TDictionary<string, Boolean>;
@@ -262,7 +268,7 @@ begin
   Name := FCtx.GetNodeText(RhsNode);
   if LookupFPCSymbol(Matched, Name).Found then Exit;
 
-  FCtx.Report(CRuleId,
+  FCtx.Report(CRuleId, CSeverity,
     Format('"%s" is not declared in FPC unit %s', [Name, Matched]), RhsNode);
 end;
 
@@ -279,7 +285,7 @@ begin
   if IsDeclaredHere(Name) then Exit;
   if KnownInAnyUsedUnit(Name) then Exit;
 
-  FCtx.Report(CRuleId,
+  FCtx.Report(CRuleId, CSeverity,
     Format('call to "%s", which is neither declared in this file nor found in the FPC units it uses', [Name]),
     EntityNode);
 end;
@@ -348,6 +354,11 @@ end;
 function TRuleHalluc001.RuleId: string;
 begin
   Result := CRuleId;
+end;
+
+function TRuleHalluc001.Severity: TSeverity;
+begin
+  Result := CSeverity;
 end;
 
 function TRuleHalluc001.Description: string;

@@ -25,7 +25,14 @@ check_dir() {
     rule_id="$(basename "$dir")"
     for file in "$dir"*.pas; do
       [ -e "$file" ] || continue
-      output="$("$RAWPACO" "$file" 2>&1)"; rc=$?
+      # --fail-on=warning(激辛モード)を明示する。設計書4.1節でルールごとに
+      # Error/Warning階層が既定でCIを落とすかどうかを分けたため、既定
+      # (--fail-on=error)のままだとWarning階層のルール(9件中5件)の
+      # negativeサンプルがrc=0になってしまう。ここでの目的は「そのルールが
+      # 発火するか」の確認であり重要度別の終了コード制御そのものではないため、
+      # 激辛モードで両者を切り離す(重要度別挙動自体は後方の--fail-on関連の
+      # single_flag_case呼び出し群を参照)。
+      output="$("$RAWPACO" --fail-on=warning "$file" 2>&1)"; rc=$?
       if echo "$output" | grep -qF "[$rule_id]"; then found=yes; else found=no; fi
       if [ "$found" != "$want_tag" ] || [ "$rc" != "$want_rc" ]; then
         echo "FAIL: $file (rule=$rule_id): expected tag=$want_tag/rc=$want_rc, got tag=$found/rc=$rc"
@@ -87,7 +94,9 @@ flag_error_case() {
 # 一度も通らない。Windows 側でも fcl-json が実際に動くことをここで担保する。
 config_case() {
   local desc="$1" cfg="$2" target="$3" want_tag="$4" want_rc="$5" output rc found
-  output="$("$RAWPACO" --config="$cfg" "$target" 2>&1)"; rc=$?
+  # RAWPACO-STYLE-001はWarning階層(設計書4.1.2節)なので、check_dir同様
+  # --fail-on=warningで重要度別デフォルトから切り離す。
+  output="$("$RAWPACO" --fail-on=warning --config="$cfg" "$target" 2>&1)"; rc=$?
   if echo "$output" | grep -qF "[RAWPACO-STYLE-001]"; then found=yes; else found=no; fi
   if [ "$found" != "$want_tag" ] || [ "$rc" != "$want_rc" ]; then
     echo "FAIL: config case '$desc': expected tag=$want_tag/rc=$want_rc, got tag=$found/rc=$rc"
@@ -98,25 +107,28 @@ config_case() {
   fi
 }
 
-# --format の配線を確認する(設計書4節)。text形式の内容自体は check_dir/flag_case
-# で既に検証済みなので、ここではgithub/jsonの形と、値検証(未知の値はrc=2)を見る。
-format_case() {
+# 単一フラグ+対象ファイルの組み合わせで、出力に期待する断片が全て含まれる
+# ことと終了コードを検証する汎用ヘルパー。元々は--format(設計書4節)専用
+# だったが、--fail-on(設計書4.1節)のような他の単一フラグのテストにも
+# そのまま使えるため、format専用の名前(旧format_case)からsingle_flag_case
+# に改名して使い回している。
+single_flag_case() {
   local desc="$1" flag="$2" target="$3" want_rc="$4"; shift 4
   local checks=("$@")
   local output rc all_ok=1 c
   output="$("$RAWPACO" "$flag" "$target" 2>&1)"; rc=$?
   for c in "${checks[@]}"; do
     if ! echo "$output" | grep -qF "$c"; then
-      echo "FAIL: format case '$desc': expected output to contain '$c'"
+      echo "FAIL: single-flag case '$desc': expected output to contain '$c'"
       all_ok=0
     fi
   done
   if [ "$rc" != "$want_rc" ]; then
-    echo "FAIL: format case '$desc': expected rc=$want_rc, got rc=$rc"
+    echo "FAIL: single-flag case '$desc': expected rc=$want_rc, got rc=$rc"
     all_ok=0
   fi
   if [ "$all_ok" = 1 ]; then
-    echo "ok:   format case '$desc'"
+    echo "ok:   single-flag case '$desc'"
   else
     echo "$output" | sed 's/^/  /'
     FAIL=1
@@ -155,11 +167,28 @@ flag_error_case 'empty --exclude value'        2 --exclude=
 flag_error_case 'empty --only value with non-empty --exclude'   2 --only= --exclude=RAWPACO-DEFENSE-001
 flag_error_case 'empty --exclude value with non-empty --only'   2 --exclude= --only=RAWPACO-DEFENSE-001
 
-format_case 'github format emits a workflow command'            --format=github "$NEG_DEFENSE" 1 '::warning file=' '[RAWPACO-DEFENSE-001]'
-format_case 'json format emits a JSON array with the diagnostic' --format=json   "$NEG_DEFENSE" 1 '"ruleId"' '"RAWPACO-DEFENSE-001"'
-format_case 'json format with no diagnostics is an empty array' --format=json \
+# NEG_DEFENSE(RAWPACO-DEFENSE-001)はError階層、NEG_STYLE(RAWPACO-STYLE-001)は
+# Warning階層(設計書4.1.2節)。両方の重要度がtext/github/json全形式で正しく
+# 出し分けられることを確認する(既定の--fail-on、すなわちerror階層のみが
+# 既定でビルドを落とすことも同時に見る)。
+single_flag_case 'text format shows "error:" for an Error-tier diagnostic'      --format=text   "$NEG_DEFENSE" 1 ': error: '
+single_flag_case 'text format shows "warning:" for a Warning-tier diagnostic'   --format=text   "$NEG_STYLE"   0 ': warning: '
+single_flag_case 'github format emits ::error for an Error-tier diagnostic'    --format=github "$NEG_DEFENSE" 1 '::error file='   '[RAWPACO-DEFENSE-001]'
+single_flag_case 'github format emits ::warning for a Warning-tier diagnostic' --format=github "$NEG_STYLE"   0 '::warning file=' '[RAWPACO-STYLE-001]'
+single_flag_case 'json format emits a JSON array with the diagnostic'          --format=json   "$NEG_DEFENSE" 1 '"ruleId"' '"RAWPACO-DEFENSE-001"' '"severity" : "error"'
+single_flag_case 'json format shows severity "warning" for a Warning-tier diagnostic' --format=json "$NEG_STYLE" 0 '"severity" : "warning"'
+single_flag_case 'json format with no diagnostics is an empty array' --format=json \
   tests/positive/RAWPACO-DEFENSE-001/real_handler.pas 0 '[]'
 flag_error_case 'unknown --format value' 2 --format=xml
+
+# 重要度別終了コード制御(--fail-on)の配線を確認する(設計書4.1節)。
+# 既定(--fail-on=error)は寛容: Error階層のみが既定でビルドを落とし、
+# Warning階層は診断自体は出力されつつも既定では終了コードに影響しない。
+# --fail-on=warning(俗称「激辛モード」)は従来の「診断1件でも失敗」を再現する。
+single_flag_case 'default --fail-on=error: Error-tier diagnostic fails the build'        --format=text "$NEG_DEFENSE" 1 '[RAWPACO-DEFENSE-001]'
+single_flag_case 'default --fail-on=error: Warning-tier diagnostic does not fail it'     --format=text "$NEG_STYLE"   0 '[RAWPACO-STYLE-001]'
+single_flag_case '--fail-on=warning flips a Warning-tier diagnostic to a failing build' --fail-on=warning "$NEG_STYLE" 1 '[RAWPACO-STYLE-001]'
+flag_error_case 'unknown --fail-on value' 2 --fail-on=bogus
 
 suppression_case 'ignore comment on the same line suppresses'               tests/suppression/ignore_same_line.pas     no  0
 suppression_case 'ignore comment on the previous line suppresses'           tests/suppression/ignore_previous_line.pas no  0

@@ -122,6 +122,7 @@ type
   public
     function RuleId: string;
     function Description: string;
+    function Severity: TSeverity;
     function InterestedNodeTypes: TStringArray;
     procedure Check(const Node: TSNode; Ctx: TLintContext);
   end;
@@ -130,6 +131,11 @@ implementation
 
 const
   CRuleId = 'RAWPACO-STYLE-002';
+  // 設計書4.1.2節: 設計書2.1節・P9エントリで明記済みの通り、同一ファイル内
+  // 近似による緩いヒューリスティックであり、構文だけでは完全に判定できない
+  // 問題への近似(誤検知率とは独立に、性質として助言的)。既定ではCIを
+  // 落とさないWarning階層。
+  CSeverity = svWarning;
 
   // system / objpas ユニットの古典的ファイルI/O手続き。objfpc/delphiモードで
   // 暗黙にusesされるため`uses`節での絞り込みはできない(冒頭コメント(b))。
@@ -426,6 +432,11 @@ begin
   Result := CRuleId;
 end;
 
+function TRuleStyle002.Severity: TSeverity;
+begin
+  Result := CSeverity;
+end;
+
 function TRuleStyle002.Description: string;
 begin
   Result := 'inconsistent error handling: the same failure-prone API is called both inside and outside try..except in one file';
@@ -457,7 +468,7 @@ begin
 
   for I := Low(Res.UnprotectedSites) to High(Res.UnprotectedSites) do
     if ContainsName(Res.ProtectedNames, Res.UnprotectedSites[I].NameUpper) then
-      Ctx.Report(CRuleId,
+      Ctx.Report(CRuleId, CSeverity,
         Format('"%s" is wrapped in try..except elsewhere in this file but not here; ' +
                'error handling for this API is inconsistent within the file',
                [Res.UnprotectedSites[I].NameText]),

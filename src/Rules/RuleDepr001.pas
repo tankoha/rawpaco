@@ -62,6 +62,7 @@ type
   public
     function RuleId: string;
     function Description: string;
+    function Severity: TSeverity;
     function InterestedNodeTypes: TStringArray;
     procedure Check(const Node: TSNode; Ctx: TLintContext);
   end;
@@ -73,6 +74,10 @@ type
 
 const
   CRuleId = 'RAWPACO-DEPR-001';
+  // 設計書4.1.2節: 検知対象のAPI自体は今も動作しており、フラグ対象は
+  // 自分で付けたdeprecated宣言を自分で無視しているという内部矛盾のみ
+  // (今すぐ壊れているわけではない)。既定ではCIを落とさないWarning階層。
+  CSeverity = svWarning;
 
 function HasDeprecatedAttribute(const AttrNode: TSNode): Boolean;
 var
@@ -168,7 +173,7 @@ begin
     end;
     if HasEntity and (ts_node_type(EntityNode) = 'identifier') and
        (Names.IndexOf(UpperCase(Ctx.GetNodeText(EntityNode))) >= 0) then
-      Ctx.Report(CRuleId,
+      Ctx.Report(CRuleId, CSeverity,
         Format('call to "%s", which is declared deprecated in this file', [Ctx.GetNodeText(EntityNode)]),
         EntityNode);
   end
@@ -180,7 +185,7 @@ begin
       OnlyChild := ts_node_named_child(Node, 0);
       if (ts_node_type(OnlyChild) = 'identifier') and
          (Names.IndexOf(UpperCase(Ctx.GetNodeText(OnlyChild))) >= 0) then
-        Ctx.Report(CRuleId,
+        Ctx.Report(CRuleId, CSeverity,
           Format('call to "%s", which is declared deprecated in this file', [Ctx.GetNodeText(OnlyChild)]),
           OnlyChild);
     end;
@@ -198,6 +203,11 @@ end;
 function TRuleDepr001.RuleId: string;
 begin
   Result := CRuleId;
+end;
+
+function TRuleDepr001.Severity: TSeverity;
+begin
+  Result := CSeverity;
 end;
 
 function TRuleDepr001.Description: string;

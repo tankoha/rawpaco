@@ -69,6 +69,7 @@ type
   public
     function RuleId: string;
     function Description: string;
+    function Severity: TSeverity;
     function InterestedNodeTypes: TStringArray;
     procedure Check(const Node: TSNode; Ctx: TLintContext);
   private
@@ -82,6 +83,9 @@ implementation
 
 const
   CRuleId = 'RAWPACO-SEC-002';
+  // 設計書4.1.2節: ソースにコミットされた資格情報。セキュリティカテゴリの
+  // ルールは既定でCIを落とすError階層とする。
+  CSeverity = svError;
 
   // 識別子名の"末尾語"としてこれらに一致する場合のみシークレットらしいと
   // 判定する(単純な部分一致ではなく接尾辞一致)。
@@ -162,6 +166,11 @@ end;
 function TRuleSec002.RuleId: string;
 begin
   Result := CRuleId;
+end;
+
+function TRuleSec002.Severity: TSeverity;
+begin
+  Result := CSeverity;
 end;
 
 function TRuleSec002.Description: string;
@@ -327,7 +336,7 @@ begin
   if ValueLooksLikePlaceholder(Trimmed) then
     Exit;
 
-  Ctx.Report(CRuleId,
+  Ctx.Report(CRuleId, CSeverity,
     Format('possible hardcoded secret: "%s" is assigned a literal string value', [DisplayName]),
     ValueNode);
 end;

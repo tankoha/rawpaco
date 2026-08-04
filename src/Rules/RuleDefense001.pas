@@ -32,6 +32,7 @@ type
   public
     function RuleId: string;
     function Description: string;
+    function Severity: TSeverity;
     function InterestedNodeTypes: TStringArray;
     procedure Check(const Node: TSNode; Ctx: TLintContext);
   private
@@ -43,10 +44,19 @@ implementation
 
 const
   CRuleId = 'RAWPACO-DEFENSE-001';
+  // 設計書4.1.2節: 例外を握りつぶすと呼び出し元は失敗を一切知り得ず、
+  // 何事もなかったかのように処理が続く。これは意見の相違ではなく実害
+  // (active harm)なので既定でCIを落とすError階層とする。
+  CSeverity = svError;
 
 function TRuleDefense001.RuleId: string;
 begin
   Result := CRuleId;
+end;
+
+function TRuleDefense001.Severity: TSeverity;
+begin
+  Result := CSeverity;
 end;
 
 function TRuleDefense001.Description: string;
@@ -101,7 +111,7 @@ begin
     // `except`フィールドの子が`kExcept`トークン自身しかない = exceptと
     // endの間に何もない。位置はexceptキーワード自体(ExceptChildren[0])
     // を指す方が、try本体が長い場合でも問題箇所を正確に示せる。
-    Ctx.Report(CRuleId,
+    Ctx.Report(CRuleId, CSeverity,
       'except block is empty: the exception is caught and silently discarded',
       ExceptChildren[0]);
     Exit;
@@ -114,7 +124,7 @@ begin
   for I := 1 to High(ExceptChildren) do
     if (ts_node_type(ExceptChildren[I]) = 'statements') and
        (ts_node_named_child_count(ExceptChildren[I]) = 0) then
-      Ctx.Report(CRuleId,
+      Ctx.Report(CRuleId, CSeverity,
         'except block contains no statements (only ";"): the exception is silently discarded',
         ExceptChildren[I]);
 end;
@@ -147,7 +157,7 @@ begin
   if ts_node_type(BodyNode) = ';' then
     // 報告位置はハンドラノード自体(`on ... do`節)。裸の`;`トークンを
     // 直接指すより、人間が読める文脈を示せる。
-    Ctx.Report(CRuleId,
+    Ctx.Report(CRuleId, CSeverity,
       'exception handler ("on ... do") has an empty body (";"): the exception is silently discarded',
       Node);
 end;

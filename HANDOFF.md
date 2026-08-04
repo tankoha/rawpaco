@@ -131,19 +131,21 @@
 - `github`形式はGitHub Actionsのworkflow command構文(`::warning file=...,line=...,col=...::[RuleId] message`)。actions/toolkitのエスケープ規則に合わせ、プロパティ値(`file=`)は`%`/`\r`/`\n`に加えて`:`/`,`もエスケープするが、`::`以降のメッセージ本文はその2文字のエスケープが不要な点が異なる(`Diagnostics.EscapeGithubProperty`/`EscapeGithubData`)。
 - `json`形式は`fpjson`(`RawpacoConfig.pas`が読み込み側で既に使っている依存)を出力側でも再利用し、`TJSONArray.AsJSON`にエスケープを任せている。
 - 抑制コメント`// rawpaco:ignore <RuleId>`は、診断の対象行またはその直前行に書くと、その`RuleId`の診断だけを抑制する(`Diagnostics.IsDiagnosticSuppressed`)。**行番号の分割基準に注意が必要**: `TDiagnostic.Line`の元になるtree-sitterの`TSPoint.row`は`vendor/tree-sitter/src/lexer.c`の`ts_lexer__do_advance`実装上、`'\n'`の出現でのみ行を進め`'\r'`単体では進めない。`TStringList.Text`のようなCR/LF/CRLFいずれも改行として扱う汎用分割だと稀にtree-sitterの行番号とずれるため、`Diagnostics.SplitSourceLines`は同じ基準(`'\n'`のみ)で自前分割している(CLAUDE.mdルール1: vendor配下の実装そのもので照合)。
-- テストは`tests/run_tests.sh`の`format_case`/`suppression_case`、フィクスチャは`tests/suppression/`(`ignore_same_line.pas`/`ignore_previous_line.pas`/`wrong_rule_id.pas`、いずれもRAWPACO-DEFENSE-001を検証対象ルールとして流用)。
+- テストは`tests/run_tests.sh`の`single_flag_case`(旧`format_case`。後述の`--fail-on`実装時に単一フラグ用の汎用ヘルパーとして改名)/`suppression_case`、フィクスチャは`tests/suppression/`(`ignore_same_line.pas`/`ignore_previous_line.pas`/`wrong_rule_id.pas`、いずれもRAWPACO-DEFENSE-001を検証対象ルールとして流用)。
 - 自己lint(`make selflint`)は変更後も警告ゼロを確認済み。CI側の変更は不要(`make test`/`bash tests/run_tests.sh`が新規テストケースも自動的に拾う)。
 
-## 重要度別(warning/error)の終了コード制御について(要実装)
+## 重要度別(warning/error)の終了コード制御について
 
-設計書7節の保留事項。9ルール実装済みになった時点でFable5がセカンドオピニオンとして検討し、当初は「導入しない」で決着したが、プロジェクトオーナーのレビューで「rawpaco自身の自己lintには無妥協方針が正しいが、下流の利用プロジェクトにはそれぞれ異なるCI方針があり、新規ツールとして採用障壁を下げるべき」という指摘を受け、**導入する・既定は寛容**方針に改訂した(設計書4.1節、2026-08-04改訂)。
+設計書7節の保留事項。9ルール実装済みになった時点でFable5がセカンドオピニオンとして検討し、当初は「導入しない」で決着したが、プロジェクトオーナーのレビューで「rawpaco自身の自己lintには無妥協方針が正しいが、下流の利用プロジェクトにはそれぞれ異なるCI方針があり、新規ツールとして採用障壁を下げるべき」という指摘を受け、**導入する・既定は寛容**方針に改訂された(設計書4.1節、2026-08-04)。実装済み(2026-08-04)。
 
-未実装(このエントリは設計のみで、`.pas`側は未着手)。実装時に必須の要点(詳細は設計書4.1節):
-
-- `TSeverity`に`svError`を追加。実装済み9ルールの重要度は設計書4.1.2節の表のとおり具体的に決め打ち済み(Error=DEFENSE-001/SEC-001/SEC-002/HALLUC-001、Warning=DEPR-001/DEPR-002/STYLE-001/DEFENSE-002/STYLE-002)。
-- CLIに`--fail-on=error|warning`(既定`error`)を追加。`--fail-on=warning`が「激辛モード」で従来の「診断1件でも終了コード1」を再現する。
-- **`Makefile`の`selflint`ターゲットに`--fail-on=warning`を追加すること(この変更と同じコミットで。忘れると自己lintのCIゲートが5ルール分静かに緩む)。** `tests/run_tests.sh`の終了コードを見ているテストケースも同様に監査が必要。
-- `text`/`github`/`json`いずれの形式でも重要度は`--fail-on`の値に関わらず常に表示する。
+- `TSeverity`が`(svWarning, svError)`の2値になった(`src/Diagnostics.pas`)。宣言順がそのまま`--fail-on`のしきい値比較(`Ord`比較)に使われるため順序を変えないこと。
+- 重要度はルールの性質として固定のハードコード定数で、CLI・`rawpaco.json`どちらからも上書きできない(設計書4.1.1/4.1.6節: 「対応しない場合の結果の深刻さ」で決め、検知精度への自信の代替にしてはならない)。各ルールファイルが`CRuleId`と並べて`CSeverity`定数を宣言し、`IRawpacoRule.Severity`(新設)がそれを返す。`TLintContext.Report`は`Report(RuleId, Severity, Message, Node)`とSeverity引数を必須にした(呼び出し側が付け忘れられない)。
+- 実装済み9ルールの重要度(設計書4.1.2節の表どおり): **Error**=RAWPACO-DEFENSE-001(空except)・SEC-001(SQL連結)・SEC-002(秘密情報)・HALLUC-001(実在しないAPI)。**Warning**=RAWPACO-DEPR-001・DEPR-002(非推奨API)・STYLE-001(命名規則)・DEFENSE-002(冗長nilチェック)・STYLE-002(エラーハンドリング近似)。
+- CLIに`--fail-on=error|warning`(既定`error`)を追加(`Diagnostics.ParseFailOnLevel`、`LintDriver.RunLint`の`HasDiagnosticAtOrAbove`でしきい値判定)。既定では診断は出力されるがError階層のみが終了コードを1にする。`--fail-on=warning`が「激辛モード」で、従来の「診断1件でも終了コード1」を厳密に再現する。未知の値は`--format=`と同じ方針でエラー終了(rc=2)。
+- **`Makefile`の`selflint`ターゲットに`--fail-on=warning`を追加済み**(この変更と同じコミットで対応。忘れると自己lintのCIゲートが9ルール中5ルール分静かに緩むところだった)。**Windows CIジョブ(`.github/workflows/ci.yml`)の自己lintステップは`make selflint`経由ではなく`./src/rawpaco.exe ...`を直接呼んでおり、Makefile側の修正だけでは反映されないため、そちらにも個別に`--fail-on=warning`を追加した**(見落としやすい箇所なので明記)。
+- `tests/run_tests.sh`の`check_dir`/`config_case`は検知の有無だけを見たいテストなので`--fail-on=warning`を明示して重要度既定から切り離した。`single_flag_case`(旧`format_case`)にError/Warning両階層のtext/github/json表示と`--fail-on`のしきい値切り替えのテストケースを追加、`flag_error_case`で未知の`--fail-on`値がrc=2になることも確認。フィクスチャはRAWPACO-DEFENSE-001(Error)とRAWPACO-STYLE-001(Warning)を流用。
+- `text`/`github`/`json`いずれの形式でも重要度は`--fail-on`の値に関わらず常に表示する(`text`は`error:`/`warning:`、`github`は`::error`/`::warning`、`json`の`"severity"`フィールドが実値を反映)。
+- 既定挙動の変更(診断1件で即終了コード1 → Error階層のみ)は意図的な破壊的変更。`0.0.1-dev`で外部利用者がまだいないタイミングだからこそ許容されるという判断(設計書4.1.7節)。
 
 ## 直近セッションのメモ
 

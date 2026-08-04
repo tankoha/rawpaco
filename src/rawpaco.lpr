@@ -47,9 +47,11 @@ var
   Source: AnsiString;
   Files: array of string;
   I: Integer;
-  Arg, ConfigPath, ConfigError, FilterError, FormatError, FormatStr: string;
+  Arg, ConfigPath, ConfigError, FilterError, FormatError, FormatStr,
+    FailOnError, FailOnStr: string;
   OnlyIds, ExcludeIds: TStringArray;
   OutFormat: TOutputFormat;
+  FailOnLevel: TSeverity;
 begin
   WriteLn('rawpaco ', VersionString, ' - FPC/Lazarus Pascal lint tool (tree-sitter-pascal based)');
 
@@ -87,6 +89,10 @@ begin
     // エラーになって分かりにくいので、明示的に弾く。
     ConfigPath := '';
     FormatStr := 'text';
+    // 設計書4.1.3/4.1.7節: 既定は寛容(error階層のみが既定でビルドを落とす)。
+    // 従来の「診断1件でも失敗」を再現する激辛モードは--fail-on=warningを
+    // 明示指定する(rawpaco自身のselflintがこれを使う。Makefile参照)。
+    FailOnStr := 'error';
     SetLength(OnlyIds, 0);
     SetLength(ExcludeIds, 0);
     SetLength(Files, 0);
@@ -97,6 +103,8 @@ begin
         ConfigPath := Copy(Arg, 10, Length(Arg))
       else if Copy(Arg, 1, 9) = '--format=' then
         FormatStr := Copy(Arg, 10, Length(Arg))
+      else if Copy(Arg, 1, 10) = '--fail-on=' then
+        FailOnStr := Copy(Arg, 11, Length(Arg))
       else if Copy(Arg, 1, 7) = '--only=' then
       begin
         OnlyIds := SplitCommaList(Copy(Arg, 8, Length(Arg)));
@@ -123,7 +131,7 @@ begin
       else if Copy(Arg, 1, 2) = '--' then
       begin
         WriteLn(StdErr, 'error: unknown option ', Arg);
-        WriteLn(StdErr, 'usage: rawpaco [--config=<path>] [--format=text|github|json] [--only=<id>[,<id>...] | --exclude=<id>[,<id>...]] <file.pas> ...');
+        WriteLn(StdErr, 'usage: rawpaco [--config=<path>] [--format=text|github|json] [--fail-on=error|warning] [--only=<id>[,<id>...] | --exclude=<id>[,<id>...]] <file.pas> ...');
         Halt(2);
       end
       else
@@ -142,6 +150,12 @@ begin
     if not ParseOutputFormat(FormatStr, OutFormat, FormatError) then
     begin
       WriteLn(StdErr, 'error: ', FormatError);
+      Halt(2);
+    end;
+
+    if not ParseFailOnLevel(FailOnStr, FailOnLevel, FailOnError) then
+    begin
+      WriteLn(StdErr, 'error: ', FailOnError);
       Halt(2);
     end;
 
@@ -165,6 +179,6 @@ begin
       Halt(2);
     end;
 
-    Halt(LintDriver.RunLint(Files, OutFormat));
+    Halt(LintDriver.RunLint(Files, OutFormat, FailOnLevel));
   end;
 end.

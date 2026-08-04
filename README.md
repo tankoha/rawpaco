@@ -43,10 +43,12 @@ Requires FPC and a C compiler (gcc); verified against FPC 3.2.2, which CI also t
   Output format (default `text`). `github` emits GitHub Actions workflow commands for inline PR annotations; `json` is a machine-readable array for other tooling.
 - `--only=<id>[,<id>...]` / `--exclude=<id>[,<id>...]` — 有効化・無効化するルールを絞り込む（同時指定はエラー）。
   Scope which rules run (mutually exclusive; using both is an error).
+- `--fail-on=error|warning` — 終了コードを1にする最低重要度（既定は`error`）。ルールはError（即対応すべき欠陥: 空exceptハンドラ・SQLインジェクション・秘密情報のハードコード・実在しないAPI参照）とWarning（いずれ直すべきだが緊急ではないもの: 非推奨API・命名規則・冗長なnilチェック・エラーハンドリングの不統一）のいずれかに分類済み。既定では診断は形式に関わらず必ず出力されるが、Warning階層はビルドを失敗させない。`--fail-on=warning`（俗称「激辛モード」）を指定すると、診断が1件でもあれば終了コードが1になる従来の挙動を再現する。
+  Minimum severity that causes exit code 1 (default `error`). Every rule is classified as either Error (an actionable defect worth blocking a merge over: empty except handlers, SQL injection, hardcoded secrets, references to nonexistent APIs) or Warning (worth fixing eventually, not urgent: deprecated APIs, naming conventions, redundant nil checks, inconsistent error handling). Diagnostics are always printed regardless of format, but a Warning-tier diagnostic alone won't fail the build by default. Pass `--fail-on=warning` ("spicy mode") to restore the original behavior where any diagnostic fails the build.
 
-診断が1件でもあれば終了コードは `1`。個別の誤検知や意図的な例外は、対象行または直前行に `// rawpaco:ignore <RuleId>` と書くと抑制できる。
+個別の誤検知や意図的な例外は、対象行または直前行に `// rawpaco:ignore <RuleId>` と書くと抑制できる。
 
-Exit code is `1` if there's even one diagnostic. Individual false positives or deliberate exceptions can be suppressed by writing `// rawpaco:ignore <RuleId>` on the target line or the line immediately before it.
+Individual false positives or deliberate exceptions can be suppressed by writing `// rawpaco:ignore <RuleId>` on the target line or the line immediately before it.
 
 ### テスト / Test
 

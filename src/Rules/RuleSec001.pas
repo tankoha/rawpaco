@@ -35,6 +35,7 @@ type
   public
     function RuleId: string;
     function Description: string;
+    function Severity: TSeverity;
     function InterestedNodeTypes: TStringArray;
     procedure Check(const Node: TSNode; Ctx: TLintContext);
   end;
@@ -43,6 +44,9 @@ implementation
 
 const
   CRuleId = 'RAWPACO-SEC-001';
+  // 設計書4.1.2節: SQLインジェクションの疑いがあるパターン。セキュリティ
+  // カテゴリのルールは既定でCIを落とすError階層とする。
+  CSeverity = svError;
 
   // 一般的すぎる語(UPDATE等は英単語としても使われる)を承知の上で、
   // Bandit(Python)のB608等、他言語の静的解析ツールでも実績のある
@@ -85,6 +89,11 @@ end;
 function TRuleSec001.RuleId: string;
 begin
   Result := CRuleId;
+end;
+
+function TRuleSec001.Severity: TSeverity;
+begin
+  Result := CSeverity;
 end;
 
 function TRuleSec001.Description: string;
@@ -149,12 +158,12 @@ begin
   if LhsIsLiteral then
   begin
     if ContainsSqlKeyword(Ctx.GetNodeText(LhsNode)) then
-      Ctx.Report(CRuleId, CMessage, Node);
+      Ctx.Report(CRuleId, CSeverity, CMessage, Node);
   end
   else
   begin
     if ContainsSqlKeyword(Ctx.GetNodeText(RhsNode)) then
-      Ctx.Report(CRuleId, CMessage, Node);
+      Ctx.Report(CRuleId, CSeverity, CMessage, Node);
   end;
 end;
 
