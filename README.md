@@ -11,6 +11,12 @@ AI（LLM）によるコード生成は便利な一方、命名規則やエラー
 
 AI-generated code tends to introduce characteristic issues — inconsistent naming and error-handling conventions across sessions, excessive defensive coding, use of nonexistent APIs (hallucination), overlooked security concerns, and outdated practices inherited from stale training data. rawpaco aims to catch these on every push via GitHub Actions, helping keep AI-assisted Pascal development consistently high quality. See [docs/RULE_ENGINE_DESIGN.md](docs/RULE_ENGINE_DESIGN.md) for the detection design.
 
+## 開発体制 / Development Process
+
+本ツールの設計・実装は複数のClaudeモデルが役割を分担して進めている。方針検討・設計はClaude Fable 5が担当し、実装は設計書中で担当として明記されたモデル（既定はSonnet5、複雑な設計判断を要する項目はOpus5）が行う。例えば重要度別終了コード制御（`--fail-on`）は、Fable5が方針検討・設計を行った上で実装された。機能・セクションごとの担当の内訳は [docs/RULE_ENGINE_DESIGN.md](docs/RULE_ENGINE_DESIGN.md) の「8. Owner Assignment Summary」を参照。
+
+Design and implementation of this tool are split across multiple Claude models. Policy consideration and design are handled by Claude Fable 5, while implementation follows whichever model the design doc credits as the owner (Sonnet5 by default; Opus5 for items requiring complex design judgment calls). Severity-based exit-code control (`--fail-on`), for example, was designed by Fable5 before being implemented. See "8. Owner Assignment Summary" in [docs/RULE_ENGINE_DESIGN.md](docs/RULE_ENGINE_DESIGN.md) for the full per-item breakdown.
+
 ## 状態 / Status
 
 lint ルールを9個実装済み（空exceptハンドラ・SQL文字列連結・シークレットのハードコード・自己矛盾する非推奨API使用・FPC RTL/FCLのdeprecatedシンボル使用・実在しないAPI(hallucination)・命名規則・生成直後の無意味なnilチェック・エラーハンドリングの不統一）。CIはLinux/Windows両方でビルド・テストし、本ツール自身のソースへの自己lintも警告ゼロを維持している。ルールごとの詳細・実装状況は [HANDOFF.md](HANDOFF.md) の「実装済みルール一覧」を参照。
