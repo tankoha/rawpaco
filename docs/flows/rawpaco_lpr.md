@@ -1,5 +1,9 @@
 # プログラムフロー: src/rawpaco.lpr
 
+**実装状況の注記（2026-08-04、レビューで判明）**: 本ファイルが描いているのは `rawpaco.lpr` の**引数なし起動時**の経路のみである。ルールエンジン実装（P1〜P9・`--only`/`--exclude`）が完了した現在、`rawpaco.lpr` はファイル引数を渡すと `--config`/`--only`/`--exclude` を解析したうえで `LintDriver.RunLint` を呼ぶ、本格的なlint実行の経路も持つ（下記の「現状」という記述は当時のものなので注意）。そちらの流れは [docs/SYSTEM_FLOW.md](../SYSTEM_FLOW.md) の「2. rawpaco内部の実行フロー」を参照。
+
+以下は元々の記述（引数なし起動時の自己チェック経路）で、現在も正確である。
+
 現状の `rawpaco.lpr` は本格的なlint実行ではなく、tree-sitter-pascalが正しくリンク・動作することを確認する自己チェックプログラムです（[docs/RULE_ENGINE_DESIGN.md](../RULE_ENGINE_DESIGN.md) 1.1節で述べている通り、ルールエンジン実装時にこの内容は `LintDriver` 等へ置き換わる想定）。
 
 ```mermaid

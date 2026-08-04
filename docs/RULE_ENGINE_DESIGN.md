@@ -205,6 +205,8 @@ CLAUDE.mdルール3（positive/negative両方必須）との整合のため、�
 
 ## 4. 診断結果の出力形式
 
+**実装状況の注記（2026-08-04、レビューで判明）**: 本節で設計した `--format` オプション・`github`/`json` 出力・末尾の「インライン抑制コメント」（`// rawpaco:ignore`）は、P1〜P9・`--only`/`--exclude` の実装完了時点でもいずれも未実装のままである。実際に実装されているのは `text` 形式のみ（`src/Diagnostics.pas` の `FormatDiagnosticText`）で、`src/rawpaco.lpr` が受け付けるオプションは `--config`/`--only`/`--exclude` のみ。詳細はHANDOFF.mdの「未着手・保留中」を参照。
+
 GitHub Actions上での利用を主眼に、以下の3形式をサポートします（`--format` オプション、デフォルトは `text`）。
 
 - `text`（デフォルト、人間可読）: `<ファイル名>:<行>:<列>: warning: <メッセージ> [<RuleId>]`（gcc/eslint系に倣った形式）
