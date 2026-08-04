@@ -153,7 +153,9 @@
 - tree-sitter本体・tree-sitter-pascalのvendoring、Makefileによるビルド、`src/rawpaco.lpr` からのtree-sitter-pascal経由パース（自己チェック用の最小プログラム）まで動作確認済み（Linux）。詳細は上記セクション参照。
 - `.github/workflows/ci.yml` を追加（Linux/Windowsの2ジョブ）。LinuxはCI相当のローカル手順（apt install fpc → make → 実行）を確認済み。Windows側も実機CIでビルド＋自己チェック実行まで成功を確認済み（上記参照）。
 - ルールエンジン全体の設計を `docs/RULE_ENGINE_DESIGN.md` にまとめた（API設計、AI生成コード特有の5問題点ごとの検知可否、サンプル配置、出力形式、自己lintへの道筋、実装優先順位付き第1弾ルール案、実装担当（Sonnet5/Opus5）の振り分けを含む）。
-- 次のステップ: Windows CIジョブの実機検証、上記設計書の優先順位に従った実際のlintルール第1号の実装（positive/negativeサンプル込み、CLAUDE.mdルール3）、ルール実装後に自己lintのCI組み込み（ルール4）。
+- 2026-08-04〜05セッション: `--format`/`--fail-on`（重要度別終了コード制御）を実装し、`docs/RULE_ENGINE_DESIGN.md`に目次を追加、README.mdに開発体制（方針検討・設計はFable5、実装は設計書に担当明記のモデル）の説明を追記。すべてビルド・`make test`・`make selflint`で確認済みで、コミット・`origin/main`へのプッシュも完了（作業ツリーはクリーン）。詳細は上記の各節を参照。
+- 未決事項（緊急ではない・ユーザー判断待ち）: `docs/RULE_ENGINE_DESIGN.md` 7節に残っている3件（(1) コミット履歴を跨いだ命名規則ドリフト検知の「拡張モード」構想、(2) 抑制コメントに理由を書く運用ルールをCLAUDE.md/README.mdへ明文化するか、(3) CLAUDE.mdルール1の適用範囲を外部Cライブラリ全般に広げる文言修正）。着手する場合はユーザーに方針を確認してから。
+- 些末な片付け候補: `.claude/worktrees/` 配下に本セッションと無関係な古いエージェント用worktreeが5つ残っている（`agent-a11cb1451c56b74b4`等、いずれも過去にマージ済みのコミットを指しておりmainより古い）。作業の妨げにはなっていないため今回は手を付けていないが、不要なら`git worktree remove`で整理してよい。
 
 ## 関連プロジェクト（参考・棚卸し対象外）
 
