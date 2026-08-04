@@ -13,6 +13,7 @@
 | RAWPACO-DEPR-002 | FPC RTL/FCLの`deprecated`シンボル使用検知 | 実装済み | `src/Rules/RuleDepr002.pas`。設計書P6。positive 5件/negative 3件。`data/fpc-rtl-symbols.txt`(静的データ)を`src/FPCSymbols.pas`が読む。検知対象は「ユニットレベルで公開されているdeprecatedシンボル」29件(`SysUtils.DecimalSeparator`等の書式グローバル変数群、`SysUtils.GetTickCount`等)。fpc-source全体(4894ファイル)で誤検知ゼロを実測 |
 | RAWPACO-HALLUC-001 | FPC RTL/FCLに実在しない識別子(hallucination)検知 | 実装済み | `src/Rules/RuleHalluc001.pas`。設計書P7。positive 4件/negative 3件。DEPR-002とデータを共有。判定A=ユニット修飾された参照(`Math.Clamp`等)、判定B=修飾なし呼び出し(usesが全て既知ユニットの場合のみ)。fpc-source全体(4894ファイル)で誤検知ゼロを実測 |
 | RAWPACO-STYLE-001 | 命名規則チェック(設定ファイルベース) | 実装済み | `src/Rules/RuleStyle001.pas` + `src/RawpacoConfig.pas`。設計書P5。positive 3件/negative 3件 + `tests/config/`の設定4ケース。設定は`rawpaco.json`(JSON/fcl-json)。既定は型名`T`(例外クラス`E`も許可)・インターフェース`I`・ポインタ型`P`・classのprivate/protectedフィールド`F`のみ |
+| RAWPACO-DEFENSE-002 | 生成直後の無意味なnilチェック検知 | 実装済み | `src/Rules/RuleDefense002.pas`。設計書P8。positive 3件/negative 3件。`Obj := <何か>.Create`(括弧の有無両対応)の直後(同一`block`/`statements`内で隣接する次の文)が`if`/`ifElse`で`Assigned(Obj)`をチェックしている場合のみ検知 |
 
 ## 見送ったルール（検討済み・意図的に未実装）
 
@@ -32,6 +33,7 @@
 - P7実装時に確認: `root`の直下は`unit`/`program`/`library`のいずれか、または（`{$i}`で他ファイルに取り込まれる前提の断片の場合）`declTypes`/`declVars`等が直接並ぶ形になる。`inherited Go;`は`exprCall`ではなく`inherited`ノード(`kInherited` + `identifier`)。`ts_node_has_error`(api.h 533行目)で構文エラーの有無を判定できる。
 - P7実装時の実測知見（誤検知対策）: fpc-source全体に当てた初版で190件の誤検知が出た。内訳と対処は (1) 175件が`{$MACRO ON}` + `{$define Rsc := }`によるマクロ展開（tree-sitterは展開しないので消える識別子を「実在しない」と誤認）→ `{$MACRO`を含むファイルでは判定Bを無効化、(2) `uses`が1つも無いファイル（`{$i}`で組み立てられるRTL内部ユニットやinclude断片）→ 「usesが1つ以上あり全て既知」を判定Bの前提条件に、(3) `AssignFile`/`CloseFile`が見つからない → これらは`system`ではなく`objpas`ユニット（objfpc/delphiモードで暗黙にuses）にあるため、`objpas`をデータ生成対象に追加。対処後は誤検知ゼロ。
 - P4実装時の設計判断: `RuleRegistry`に登録されるルールインスタンスは`initialization`で一度だけ生成され、`RunLint`が複数ファイルを処理する間ずっと使い回される。RAWPACO-DEPR-001は「ファイル内でdeprecated宣言を集めてから使用箇所を照合する」という2パス処理(ファイル単位の一時的な状態)が必要だが、インスタンスフィールドに状態を持たせるとファイルをまたいで漏れる。これを避けるため`InterestedNodeTypes`を最上位の`root`ノードのみとし、1ファイルにつき1回のCheck呼び出しの中でローカル変数を使って自己完結した探索を行う設計とした(ASTWalker等の共通インフラは無改修)。複数ファイルを1回の実行で渡し、片方だけにdeprecated宣言がある状態で状態漏れがないことを実装時に確認済み。
+- P8実装時に確認: `begin...end`は`block`ノード、try/repeat等の本体は`statements`ノードという**別のノード種別**になるが、いずれもフィールド名を持たず`assignment`/`if`/`ifElse`/`statement`等が直接並ぶ点は同じ。「隣接する2文」を見るルールは両方を`InterestedNodeTypes`に含める必要がある(`statements`だけだと`begin...end`直下では一度もCheckが呼ばれず静かに無効化される。実装時に一度これで全サンプル非検知になり気づいた)。また`Obj := TFoo.Create;`(括弧なし)は`assignment`のrhsが`exprDot`に、`Obj := TFoo.Create();`(括弧あり)は`exprCall`(entity=`exprDot`)になる違いも要考慮。詳細は`src/Rules/RuleDefense002.pas`冒頭コメント参照。
 
 ## FPC RTL/FCL シンボル一覧 (`data/fpc-rtl-symbols.txt`) について
 
@@ -105,7 +107,7 @@
 
 ## 未着手・保留中
 
-- 設計書 P8（RAWPACO-DEFENSE-002 生成直後の無意味なnilチェック、担当Sonnet5）、P9（RAWPACO-STYLE-002 エラーハンドリング不統一の近似検知、担当Opus5）が未着手。
+- 設計書 P9（RAWPACO-STYLE-002 エラーハンドリング不統一の近似検知、担当Opus5）が未着手。P8は実装済み（下記参照）。
 - `--only` / `--exclude` によるルール個別のオンオフは未実装（設計書5節・8節、担当Sonnet5）。`rawpaco.json` にはルール単位の有効・無効を書くキーを**意図的に設けていない**。ルールのオンオフはルールエンジン側（RuleRegistry のディスパッチ）の仕組みであって命名規則の設定とは層が違うため、`--only`/`--exclude` を実装する際に設定ファイル側のキーもあわせて設計するのがよい。
 
 ## 直近セッションのメモ
