@@ -41,6 +41,47 @@ check_dir() {
 check_dir positive no  0
 check_dir negative yes 1
 
+# --only/--exclude の配線を確認する。DEFENSE-001とSEC-001それぞれを検知する
+# 2ファイルを同時に渡し、フィルタで片方だけが黙ることを見る。
+flag_case() {
+  local desc="$1" flag="$2" want_rc="$3"; shift 3
+  local want_tags=("$@")
+  local output rc tag found all_ok=1
+  output="$("$RAWPACO" "$flag" "$NEG_DEFENSE" "$NEG_SEC001" 2>&1)"; rc=$?
+  for tag in "RAWPACO-DEFENSE-001" "RAWPACO-SEC-001"; do
+    if echo "$output" | grep -qF "[$tag]"; then found=yes; else found=no; fi
+    local want=no
+    for w in "${want_tags[@]}"; do [ "$w" = "$tag" ] && want=yes; done
+    if [ "$found" != "$want" ]; then
+      echo "FAIL: flag case '$desc': expected $tag tag=$want, got $found"
+      all_ok=0
+    fi
+  done
+  if [ "$rc" != "$want_rc" ]; then
+    echo "FAIL: flag case '$desc': expected rc=$want_rc, got rc=$rc"
+    all_ok=0
+  fi
+  if [ "$all_ok" = 1 ]; then
+    echo "ok:   flag case '$desc'"
+  else
+    echo "$output" | sed 's/^/  /'
+    FAIL=1
+  fi
+}
+
+flag_error_case() {
+  local desc="$1" want_rc="$2"; shift 2
+  local output rc
+  output="$("$RAWPACO" "$@" "$NEG_DEFENSE" 2>&1)"; rc=$?
+  if [ "$rc" != "$want_rc" ]; then
+    echo "FAIL: flag error case '$desc': expected rc=$want_rc, got rc=$rc"
+    echo "$output" | sed 's/^/  /'
+    FAIL=1
+  else
+    echo "ok:   flag error case '$desc'"
+  fi
+}
+
 # 設定ファイル(--config)の配線を確認する。RAWPACO-STYLE-001 は設定で挙動が
 # 変わる唯一のルールなので、サンプルの走査だけでは設定の読み込み経路が
 # 一度も通らない。Windows 側でも fcl-json が実際に動くことをここで担保する。
@@ -59,6 +100,16 @@ config_case() {
 
 NEG_STYLE=tests/negative/RAWPACO-STYLE-001/type_names_without_prefix.pas
 POS_STYLE=tests/positive/RAWPACO-STYLE-001/conventional_names.pas
+NEG_DEFENSE=tests/negative/RAWPACO-DEFENSE-001/empty_except.pas
+NEG_SEC001=tests/negative/RAWPACO-SEC-001/sql_concat_lhs_literal.pas
+
+flag_case '--only keeps just the listed rule'    --only=RAWPACO-DEFENSE-001    1 RAWPACO-DEFENSE-001
+flag_case '--exclude drops just the listed rule' --exclude=RAWPACO-DEFENSE-001 1 RAWPACO-SEC-001
+flag_error_case 'unknown --only id'            2 --only=RAWPACO-NOPE
+flag_error_case 'unknown --exclude id'         2 --exclude=RAWPACO-NOPE
+flag_error_case '--only and --exclude together' 2 --only=RAWPACO-DEFENSE-001 --exclude=RAWPACO-SEC-001
+flag_error_case 'empty --only value'           2 --only=
+flag_error_case 'empty --exclude value'        2 --exclude=
 
 # naming.enabled=false でルール全体が黙る
 config_case 'naming disabled'        tests/config/naming_disabled.json "$NEG_STYLE" no  0

@@ -24,19 +24,47 @@ type
 procedure RegisterRule(const Rule: IRawpacoRule);
 procedure DispatchNode(const Node: TSNode; Ctx: TLintContext);
 
+// 登録済み全ルールのIDを重複なく返す(登録順)。--only/--exclude が指定した
+// IDの実在確認、およびエラーメッセージでの既知ID列挙に使う。
+function AllRuleIds: TStringArray;
+
+// --only/--exclude によるルールの有効・無効を設定する。OnlyIds/ExcludeIds
+// のどちらか一方だけを渡すこと(両方非空にする/しないの判断は呼び出し側の
+// rawpaco.lprが行う。このユニットはCLIオプションの存在を知らない)。
+// 未知のルールIDが含まれる場合はFalseを返しErrorMsgに理由を入れる
+// (rawpaco.jsonの未知キーと同じ方針: タイプミスを黙って無視しない。
+// CLAUDE.mdルール5)。
+function SetRuleFilter(const OnlyIds, ExcludeIds: TStringArray;
+  out ErrorMsg: string): Boolean;
+
 implementation
 
 type
   TDispatchTable = specialize TDictionary<string, TRuleList>;
+  TFilterMode = (fmNone, fmOnly, fmExclude);
 
 var
   GDispatch: TDispatchTable;
+  GAllRules: TRuleList;
+  GFilterMode: TFilterMode = fmNone;
+  GFilterIds: TStringArray;
+
+function IdInArray(const Id: string; const Arr: TStringArray): Boolean;
+var
+  S: string;
+begin
+  Result := False;
+  for S in Arr do
+    if S = Id then
+      Exit(True);
+end;
 
 procedure RegisterRule(const Rule: IRawpacoRule);
 var
   NodeType: string;
   List: TRuleList;
 begin
+  GAllRules.Add(Rule);
   for NodeType in Rule.InterestedNodeTypes do
   begin
     if not GDispatch.TryGetValue(NodeType, List) then
@@ -45,6 +73,16 @@ begin
       GDispatch.Add(NodeType, List);
     end;
     List.Add(Rule);
+  end;
+end;
+
+function RuleIsEnabled(const Id: string): Boolean;
+begin
+  case GFilterMode of
+    fmOnly:    Result := IdInArray(Id, GFilterIds);
+    fmExclude: Result := not IdInArray(Id, GFilterIds);
+  else
+    Result := True;
   end;
 end;
 
@@ -57,7 +95,57 @@ begin
   // 暗黙変換される。
   if GDispatch.TryGetValue(ts_node_type(Node), List) then
     for Rule in List do
-      Rule.Check(Node, Ctx);
+      if RuleIsEnabled(Rule.RuleId) then
+        Rule.Check(Node, Ctx);
+end;
+
+function AllRuleIds: TStringArray;
+var
+  I: Integer;
+  Ids: TStringArray;
+begin
+  SetLength(Ids, GAllRules.Count);
+  for I := 0 to GAllRules.Count - 1 do
+    Ids[I] := GAllRules[I].RuleId;
+  Result := Ids;
+end;
+
+function SetRuleFilter(const OnlyIds, ExcludeIds: TStringArray;
+  out ErrorMsg: string): Boolean;
+var
+  Known: TStringArray;
+  Id: string;
+begin
+  ErrorMsg := '';
+  Known := AllRuleIds;
+
+  for Id in OnlyIds do
+    if not IdInArray(Id, Known) then
+    begin
+      ErrorMsg := Format('unknown rule id in --only: %s', [Id]);
+      Exit(False);
+    end;
+  for Id in ExcludeIds do
+    if not IdInArray(Id, Known) then
+    begin
+      ErrorMsg := Format('unknown rule id in --exclude: %s', [Id]);
+      Exit(False);
+    end;
+
+  if Length(OnlyIds) > 0 then
+  begin
+    GFilterMode := fmOnly;
+    GFilterIds := OnlyIds;
+  end
+  else if Length(ExcludeIds) > 0 then
+  begin
+    GFilterMode := fmExclude;
+    GFilterIds := ExcludeIds;
+  end
+  else
+    GFilterMode := fmNone;
+
+  Result := True;
 end;
 
 procedure FreeDispatchTable;
@@ -73,8 +161,10 @@ end;
 
 initialization
   GDispatch := TDispatchTable.Create;
+  GAllRules := TRuleList.Create;
 
 finalization
   FreeDispatchTable;
+  GAllRules.Free;
 
 end.

@@ -3,10 +3,42 @@ program rawpaco;
 {$mode objfpc}{$H+}
 
 uses
-  SysUtils, TSBindings, LintDriver, RawpacoConfig;
+  SysUtils, Classes, TSBindings, LintDriver, RawpacoConfig, RuleRegistry;
 
 const
   VersionString = '0.0.1-dev';
+
+// ","区切りの文字列をトリムしつつ配列にする。空要素(末尾カンマ等)は捨てる。
+// 全体が空(例: "--only=")ならエラーにする側の判断は呼び出し元で行う
+// (このユニット内で完結させると「空リスト=フィルタなし」との区別が
+// 呼び出し元から見えなくなるため)。
+function SplitCommaList(const S: string): TStringArray;
+var
+  Parts: TStringList;
+  I: Integer;
+  Item: string;
+  Ids: TStringArray;
+begin
+  SetLength(Ids, 0);
+  Parts := TStringList.Create;
+  try
+    Parts.StrictDelimiter := True;
+    Parts.Delimiter := ',';
+    Parts.DelimitedText := S;
+    for I := 0 to Parts.Count - 1 do
+    begin
+      Item := Trim(Parts[I]);
+      if Item <> '' then
+      begin
+        SetLength(Ids, Length(Ids) + 1);
+        Ids[High(Ids)] := Item;
+      end;
+    end;
+  finally
+    Parts.Free;
+  end;
+  Result := Ids;
+end;
 
 var
   Parser: TSParser;
@@ -15,7 +47,8 @@ var
   Source: AnsiString;
   Files: array of string;
   I: Integer;
-  Arg, ConfigPath, ConfigError: string;
+  Arg, ConfigPath, ConfigError, FilterError: string;
+  OnlyIds, ExcludeIds: TStringArray;
 begin
   WriteLn('rawpaco ', VersionString, ' - FPC/Lazarus Pascal lint tool (tree-sitter-pascal based)');
 
@@ -52,16 +85,22 @@ begin
     // 未知のオプションを黙ってファイル名として扱うと「存在しないファイル」
     // エラーになって分かりにくいので、明示的に弾く。
     ConfigPath := '';
+    SetLength(OnlyIds, 0);
+    SetLength(ExcludeIds, 0);
     SetLength(Files, 0);
     for I := 1 to ParamCount do
     begin
       Arg := ParamStr(I);
       if Copy(Arg, 1, 9) = '--config=' then
         ConfigPath := Copy(Arg, 10, Length(Arg))
+      else if Copy(Arg, 1, 7) = '--only=' then
+        OnlyIds := SplitCommaList(Copy(Arg, 8, Length(Arg)))
+      else if Copy(Arg, 1, 10) = '--exclude=' then
+        ExcludeIds := SplitCommaList(Copy(Arg, 11, Length(Arg)))
       else if Copy(Arg, 1, 2) = '--' then
       begin
         WriteLn(StdErr, 'error: unknown option ', Arg);
-        WriteLn(StdErr, 'usage: rawpaco [--config=<path>] <file.pas> ...');
+        WriteLn(StdErr, 'usage: rawpaco [--config=<path>] [--only=<id>[,<id>...] | --exclude=<id>[,<id>...]] <file.pas> ...');
         Halt(2);
       end
       else
@@ -74,6 +113,33 @@ begin
     if not InitConfig(ConfigPath, ConfigError) then
     begin
       WriteLn(StdErr, 'error: ', ConfigError);
+      Halt(2);
+    end;
+
+    // --onlyと--excludeの同時指定は「両方の集合をどう組み合わせるか」が
+    // 自明ではない(積？和の補集合？)ため、あいまいさを残さず明示的に
+    // エラーにする(rawpaco.jsonの未知キー同様、寛容にしない方針)。
+    if (Length(OnlyIds) > 0) and (Length(ExcludeIds) > 0) then
+    begin
+      WriteLn(StdErr, 'error: --only and --exclude cannot be used together');
+      Halt(2);
+    end;
+    if (Length(OnlyIds) = 0) and (Length(ExcludeIds) = 0) then
+    begin
+      // "--only=" や "--exclude=" だけ渡して中身が空、というのは
+      // 「フィルタなし」と区別が付かず事故のもとなので、フラグ自体が
+      // 一度も現れていない場合とは別に、空リストで渡された場合はここで
+      // 検出してエラーにする。
+      for I := 1 to ParamCount do
+        if (ParamStr(I) = '--only=') or (ParamStr(I) = '--exclude=') then
+        begin
+          WriteLn(StdErr, 'error: ', ParamStr(I), ' requires a comma-separated list of rule ids');
+          Halt(2);
+        end;
+    end;
+    if not RuleRegistry.SetRuleFilter(OnlyIds, ExcludeIds, FilterError) then
+    begin
+      WriteLn(StdErr, 'error: ', FilterError);
       Halt(2);
     end;
 
