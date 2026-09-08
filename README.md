@@ -72,6 +72,7 @@ make selflint  # 本ツール自身のソースをlintし警告ゼロを確認 /
 - `data/` — `RAWPACO-DEPR-002`/`RAWPACO-HALLUC-001` が参照するFPC RTL/FCLシンボル一覧（静的コミット） / FPC RTL/FCL symbol data used by `RAWPACO-DEPR-002`/`RAWPACO-HALLUC-001` (statically committed)
 - `tools/` — 上記シンボル一覧を再生成するスクリプト / scripts to regenerate the symbol data above
 - `vendor/` — tree-sitter本体・tree-sitter-pascalのvendoringされたソース（バージョン固定） / vendored, version-pinned sources for tree-sitter core and tree-sitter-pascal
+- `.github/workflows/` — CI定義（コメントは日本語。英語コメント版のサンプルは [docs/ci_en.yml](docs/ci_en.yml)） / CI definitions (comments are in Japanese; an English-commented sample lives in [docs/ci_en.yml](docs/ci_en.yml))
 
 ## 実装方針 / Design
 

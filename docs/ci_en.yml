@@ -1,0 +1,177 @@
+# English-commented sample of the CI workflow.
+#
+# This is a reference translation of `.github/workflows/ci.yml`, provided for
+# readers who do not read Japanese. It is intentionally kept OUT of
+# `.github/workflows/` so that GitHub Actions does not pick it up and run the
+# whole matrix twice. `.github/workflows/ci.yml` remains the authoritative
+# definition; if the two ever disagree, that file wins. Keep this copy in sync
+# when the workflow changes.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install FPC
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y fpc
+
+      - name: Build (vendor objects + rawpaco)
+        run: make
+
+      - name: Run bootstrap self-check
+        run: ./src/rawpaco
+
+      - name: Run rule sample tests
+        run: make test
+
+      - name: Self-lint (CLAUDE.md rule 4)
+        run: make selflint
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Installing via choco updates the machine-wide PATH (the registry), but
+      # GitHub Actions launches every step as a fresh process, so that change is
+      # not automatically visible to later steps in the same job. Appending to
+      # $GITHUB_PATH explicitly is required (this actually showed up as
+      # `fpc: command not found` on the very first CI run).
+      #
+      # On a 64-bit OS the choco freepascal package also tries to install the
+      # win64 cross compiler (ppcx64.exe), but the component list in the shared
+      # setup.inf does not match the component IDs of that additional installer,
+      # so ppcx64.exe never actually gets placed. We also tried fetching the
+      # standalone win64 cross-compiler installer
+      # (fpc-3.2.2.i386-win32.cross.x86_64-win64.exe) directly and running it
+      # silently, but with no real Windows machine available we could not verify
+      # the silent-install arguments, and ppcx64.exe was still missing after the
+      # install (see HANDOFF.md for details). We gave up chasing the 64-bit side
+      # and instead match gcc to the 32-bit compiler (ppc386.exe), which is
+      # reliably present. `--x86` makes the mingw package download a 32-bit
+      # (i686) build as well.
+      #
+      # Note that the problems discovered afterwards (the internal linker crash
+      # and friends) are not 32-bit specific: FPC 3.2.2 uses the same internal
+      # linker by default for win64 too, so the same workarounds (-Xe etc.)
+      # would still be needed after a move to 64-bit. Everything is already
+      # solved on 32-bit, so we are not pursuing that move.
+      - name: Install FPC and MinGW (gcc)
+        shell: pwsh
+        run: |
+          choco install -y freepascal mingw --x86
+
+          $fpcExe = Get-ChildItem -Path 'C:\tools\freepascal' -Filter fpc.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $fpcExe) { throw "fpc.exe not found under C:\tools\freepascal after chocolatey install" }
+          Add-Content -Path $env:GITHUB_PATH -Value $fpcExe.DirectoryName
+
+          $gccExe = Get-ChildItem -Path 'C:\ProgramData\mingw64' -Filter gcc.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $gccExe) { throw "gcc.exe not found under C:\ProgramData\mingw64 after chocolatey install" }
+          Add-Content -Path $env:GITHUB_PATH -Value $gccExe.DirectoryName
+
+          # FPC's own linker (ld.exe) does not implicitly pull in the default
+          # libraries gcc adds for you (libgcc, libmingwex, libmingw32, the CRT,
+          # kernel32, ...), so symbols the vendored C sources rely on
+          # (malloc/memcpy/QueryPerformanceCounter, ...) fail to link with
+          # "Undefined symbol" (observed on the 5th run, right after the 4th CI
+          # run first went green). Locate where those .a files actually live and
+          # hand them to the later steps as -Fl (library search path).
+          $mingwRoot = Split-Path -Parent (Split-Path -Parent $gccExe.DirectoryName)
+          $libDirs = Get-ChildItem -Path $mingwRoot -Include 'libmingwex.a','libmingw32.a','libgcc.a','libkernel32.a','libucrt.a','libmsvcrt.a','libwinpthread.a' -Recurse -ErrorAction SilentlyContinue |
+            ForEach-Object { $_.DirectoryName } | Sort-Object -Unique
+          if (-not $libDirs) { throw "no mingw runtime import libraries (libmingwex.a etc.) found under $mingwRoot" }
+          Add-Content -Path $env:GITHUB_ENV -Value "MINGW_LIB_DIRS=$($libDirs -join ';')"
+
+          # The default unit search path of the choco freepascal build appears
+          # not to include package subdirectories such as rtl-generics (it first
+          # failed with "Can't find unit Generics.Collections", and adding that
+          # one directory with -Fu then exposed its dependency "Can't find unit
+          # Variants", and so on down the chain). On Linux the (apt) fpc.cfg
+          # includes every package subdirectory automatically via the wildcard
+          # units/$fpctarget/*, so we apply that same wildcard approach to the
+          # choco build rather than patching up one package at a time. The
+          # parent of the rtl-generics directory (units\i386-win32) is the
+          # fpctarget-level directory, so appending \* there covers all package
+          # subdirectories at once.
+          $genericsUnit = Get-ChildItem -Path 'C:\tools\freepascal' -Include 'generics.collections.ppu','generics.collections.pas' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $genericsUnit) { throw "generics.collections.ppu/.pas not found under C:\tools\freepascal" }
+          $fpcUnitsRoot = Split-Path -Parent $genericsUnit.DirectoryName
+          Add-Content -Path $env:GITHUB_ENV -Value "FPC_UNITS_ROOT=$fpcUnitsRoot"
+
+      # win32_atexit_shim.c is only needed on Windows. It works around the fact
+      # that the UCRT flavour of mingw-w64 provides a plain `atexit` symbol in
+      # no library at all (see src/TSBindings.pas and HANDOFF.md for why).
+      - name: Build vendor objects
+        shell: bash
+        run: |
+          mkdir -p build
+          gcc -c vendor/tree-sitter/src/lib.c -I vendor/tree-sitter/include -I vendor/tree-sitter/src -o build/tree-sitter.o
+          gcc -c vendor/tree-sitter-pascal/src/parser.c -I vendor/tree-sitter-pascal/src -I vendor/tree-sitter/include -o build/tree-sitter-pascal.o
+          gcc -c src/win32_atexit_shim.c -o build/win32_atexit_shim.o
+
+      # Why each option is passed to fpc (all of them pinned down by real runs
+      # of the Windows CI; see HANDOFF.md for the full history):
+      #
+      #   -Xe   FPC's win32 target defaults to the internal linker
+      #         (ld_int_windows), but the 3.2.2 internal linker crashes the
+      #         compiler itself with an EAccessViolation when this project's
+      #         link is carried through to the end. Switching to the external
+      #         ld.exe (bundled with choco's freepascal) fixes it, and as a
+      #         bonus makes the -k options — which the internal linker ignored —
+      #         take effect.
+      #
+      #   -k<obj>  Hands the atexit shim object straight to ld. Embedding it
+      #         with {$L} is not usable, because that goes through FPC's own
+      #         COFF parsing path, which crashes.
+      #
+      #   -k--allow-multiple-definition
+      #         Because FPC's sysinitpas.o and mingw's libmingw32.a (tlssup.o)
+      #         both define `_tls_used` (the TLS directory). The FPC-side
+      #         definition, appearing first, is the one adopted. Stripping
+      #         tlssup.o out of the archive is not an option, since FPC needs it
+      #         as the source of the `.tls` section and of
+      #         `___tls_start__`/`___tls_end__` (trying that failed with
+      #         "defined in discarded section `.tls'").
+      #
+      #   -k--strip-debug
+      #         mingw's runtime objects drag in DWARF5 debug info, leaving
+      #         .debug_* sections with VMA 0 in the PE section table. The
+      #         Windows loader rejects an exe in that state, and starting it
+      #         yields ENOEXEC ("Exec format error"). Dropping the debug info
+      #         makes it start normally.
+      - name: Build rawpaco
+        shell: bash
+        run: |
+          FL_ARGS=()
+          IFS=';' read -ra DIRS <<< "$MINGW_LIB_DIRS"
+          for d in "${DIRS[@]}"; do
+            FL_ARGS+=("-Fl$d")
+          done
+          fpc -Xe -kbuild/win32_atexit_shim.o -k--allow-multiple-definition -k--strip-debug -Fusrc/Rules "-Fu$FPC_UNITS_ROOT/*" "${FL_ARGS[@]}" src/rawpaco.lpr
+
+      - name: Run bootstrap self-check
+        shell: bash
+        run: ./src/rawpaco.exe
+
+      - name: Run rule sample tests
+        shell: bash
+        run: bash tests/run_tests.sh
+
+      - name: Self-lint (CLAUDE.md rule 4)
+        shell: bash
+        # --fail-on=warning (design doc section 4.1.4): now that the default for
+        # severity-based exit-code control is lenient, self-lint asks for the
+        # strictest mode explicitly, keeping the previous policy of failing on
+        # even a single diagnostic (same reason as the Makefile's selflint
+        # target; the Linux job goes through make selflint, where it is already
+        # implemented).
+        run: ./src/rawpaco.exe --fail-on=warning src/*.pas src/Rules/*.pas src/rawpaco.lpr
