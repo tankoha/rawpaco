@@ -63,6 +63,12 @@ make test      # positive/negativeサンプル・CLIオプションの配線を�
 make selflint  # 本ツール自身のソースをlintし警告ゼロを確認 / lints rawpaco's own source, expecting zero warnings
 ```
 
+## CI
+
+`.github/workflows/ci.yml` が push / pull request ごとに Linux・Windows 両環境でのビルド、ルールサンプルテスト、自己lint（警告ゼロ維持）を実行する。コメントは日本語で、特に Windows 側のビルドオプションを決めるに至った経緯が詳しく残されている。同じワークフローのコメントを英訳したサンプルを [docs/ci_en.yml](docs/ci_en.yml) に用意している。GitHub Actions に二重に拾われないよう `docs/` 配下に置いてあるので、実際に実行されるのは `.github/workflows/ci.yml` のみで、そちらが正となる。
+
+`.github/workflows/ci.yml` builds, runs the rule sample tests, and self-lints (expecting zero warnings) on both Linux and Windows for every push and pull request. Its comments are in Japanese and carry most of the reasoning behind the Windows build options in particular. An English-commented sample of the same workflow is available at [docs/ci_en.yml](docs/ci_en.yml). It is kept under `docs/` so GitHub Actions does not pick it up twice, which means `.github/workflows/ci.yml` is the only workflow that actually runs, and it stays authoritative.
+
 ## ディレクトリ構成 / Directory Layout
 
 - `src/` — ツール本体 / tool source
@@ -72,7 +78,7 @@ make selflint  # 本ツール自身のソースをlintし警告ゼロを確認 /
 - `data/` — `RAWPACO-DEPR-002`/`RAWPACO-HALLUC-001` が参照するFPC RTL/FCLシンボル一覧（静的コミット） / FPC RTL/FCL symbol data used by `RAWPACO-DEPR-002`/`RAWPACO-HALLUC-001` (statically committed)
 - `tools/` — 上記シンボル一覧を再生成するスクリプト / scripts to regenerate the symbol data above
 - `vendor/` — tree-sitter本体・tree-sitter-pascalのvendoringされたソース（バージョン固定） / vendored, version-pinned sources for tree-sitter core and tree-sitter-pascal
-- `.github/workflows/` — CI定義（コメントは日本語。英語コメント版のサンプルは [docs/ci_en.yml](docs/ci_en.yml)） / CI definitions (comments are in Japanese; an English-commented sample lives in [docs/ci_en.yml](docs/ci_en.yml))
+- `.github/workflows/` — CI定義（英語コメント版のサンプルは [docs/ci_en.yml](docs/ci_en.yml)） / CI definitions (an English-commented sample lives in [docs/ci_en.yml](docs/ci_en.yml))
 
 ## 実装方針 / Design
 
