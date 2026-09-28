@@ -15,13 +15,14 @@ TS_OBJ := $(BUILD)/tree-sitter.o
 TSP_OBJ := $(BUILD)/tree-sitter-pascal.o
 
 RULE_SOURCES := src/Diagnostics.pas src/RuleRegistry.pas src/ASTWalker.pas \
-                src/ASTHelpers.pas \
+                src/ASTHelpers.pas src/CompilerDirectives.pas \
                 src/FPCSymbols.pas src/RawpacoConfig.pas src/LintDriver.pas \
                 src/Rules/RuleDefense001.pas \
                 src/Rules/RuleSec001.pas src/Rules/RuleSec002.pas \
                 src/Rules/RuleDepr001.pas src/Rules/RuleDepr002.pas \
                 src/Rules/RuleHalluc001.pas src/Rules/RuleStyle001.pas \
                 src/Rules/RuleDefense002.pas src/Rules/RuleStyle002.pas \
+                src/Rules/RuleMode001.pas src/Rules/RuleMode002.pas \
                 src/Rules/AllRules.pas
 
 .PHONY: all clean test selflint

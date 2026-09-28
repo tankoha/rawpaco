@@ -99,6 +99,15 @@ procedure CollectDeclaredNames(const Node: TSNode; Ctx: TLintContext; Names: TNa
 // まま返す。見つからなければ空文字列。
 function FindUnitByName(Units: TUnitList; const Name: string): string;
 
+// root 直下に `unit` / `program` / `library` があるか。
+//
+// これが False のファイルは「`{$i}` で他ファイルに取り込まれる前提の断片」
+// （`declTypes`/`declVars` 等が root 直下に直接並ぶ形）であり、ファイル単位で
+// 完結する前提の判定（宣言がこのファイル内にあるか、コンパイラ指令がこの
+// ファイル内で揃っているか等）は成立しない。そういう判定を行うルールは
+// これを門番に使う（CLAUDE.mdルール5）。
+function IsCompilationUnit(const Root: TSNode): Boolean;
+
 implementation
 
 function FindFieldChild(const Node: TSNode; const FieldName: string;
@@ -215,6 +224,23 @@ begin
   for U in Units do
     if CompareText(U, Name) = 0 then
       Exit(U);
+end;
+
+function IsCompilationUnit(const Root: TSNode): Boolean;
+var
+  Count, I: LongWord;
+  T: PAnsiChar;
+begin
+  Result := False;
+  Count := ts_node_named_child_count(Root);
+  I := 0;
+  while I < Count do
+  begin
+    T := ts_node_type(ts_node_named_child(Root, I));
+    if (T = 'unit') or (T = 'program') or (T = 'library') then
+      Exit(True);
+    Inc(I);
+  end;
 end;
 
 end.

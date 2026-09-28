@@ -23,6 +23,7 @@
   - [2.4 セキュリティ考慮漏れ](#24-セキュリティ考慮漏れ)
   - [2.5 古い書き方（学習データに引っ張られた非推奨API等）](#25-古い書き方学習データに引っ張られた非推奨api等)
   - [2.6 まとめ表](#26-まとめ表)
+  - [2.7 コンパイラ指令（方言）の衛生](#27-コンパイラ指令方言の衛生--2026-09-29-追加)
 - [3. positive/negativeサンプルの配置・実行方法](#3-positivenegativeサンプルの配置実行方法)
 - [4. 診断結果の出力形式](#4-診断結果の出力形式)
   - [4.1 重要度別の終了コード制御: 導入で決着、既定は寛容](#41-重要度別の終了コード制御-導入で決着既定は寛容2026-08-04改訂担当-fable5)
@@ -37,6 +38,8 @@
   - [P7: RAWPACO-HALLUC-001 FPC RTL/FCLの既知シンボル一覧との突き合わせ](#p7-rawpaco-halluc-001-fpc-rtlfclの既知シンボル一覧との突き合わせ)
   - [P8: RAWPACO-DEFENSE-002 生成直後の無意味なnilチェック](#p8-rawpaco-defense-002-生成直後の無意味なnilチェック)
   - [P9: RAWPACO-STYLE-002 同一ファイル内でのエラーハンドリング不統一（近似）](#p9-rawpaco-style-002-同一ファイル内でのエラーハンドリング不統一近似)
+  - [P10: RAWPACO-MODE-001 `$H` がオフの状態での `string` 使用](#p10-rawpaco-mode-001-h-がオフの状態での-string-使用255文字での黙った切り捨て)
+  - [P11: RAWPACO-MODE-002 同一ファイル内の異なる `{$mode}` 指令](#p11-rawpaco-mode-002-同一ファイル内の異なる-mode-指令)
 - [7. 未決事項・提案（大きな方針転換になりうるもの・独断で決めていない事項）](#7-未決事項提案大きな方針転換になりうるもの独断で決めていない事項)
 - [8. 担当振り分け一覧（まとめ）](#8-担当振り分け一覧まとめ)
 
@@ -66,6 +69,7 @@ rawpaco.lpr (CLIエントリポイント) … CLIフラグのパース、設定�
        ├─ Diagnostics.pas  … TLintContext、TDiagnostic レコード、重要度、text/github/json フォーマッタ、抑制コメントの処理
        └─ Rules/*.pas      … ルール本体（1ルール1ユニット）。すべて Rules/AllRules.pas に列挙する
             ├─ ASTHelpers.pas … 複数ルールが共有するノード走査補助（フィールド子の取得、uses・宣言名の収集）
+            ├─ CompilerDirectives.pas … {$...} / (*$...*) 指令の収集と解析（RAWPACO-MODE-* が使用）
             └─ FPCSymbols.pas … data/fpc-rtl-symbols.txt のローダ（RAWPACO-DEPR-002 / RAWPACO-HALLUC-001 が使用）
 
 TSBindings.pas … tree-sitter C API の cdecl 外部宣言と、vendor/ からビルドしたオブジェクトへの {$L} リンク。
@@ -129,7 +133,7 @@ type
   end;
 ```
 
-- `RuleId` は `RAWPACO-<カテゴリ>-<連番>` 形式に統一します（カテゴリ例: `SEC`=セキュリティ, `STYLE`=一貫性・命名, `DEPR`=非推奨API, `DEFENSE`=過剰防御, `HALLUC`=hallucination）。カテゴリは「5つの問題点」との対応を追跡しやすくするためのものです。
+- `RuleId` は `RAWPACO-<カテゴリ>-<連番>` 形式に統一します（カテゴリ例: `SEC`=セキュリティ, `STYLE`=一貫性・命名, `DEPR`=非推奨API, `DEFENSE`=過剰防御, `HALLUC`=hallucination, `MODE`=コンパイラ指令・方言の衛生（後から追加。2.7節参照））。カテゴリは「5つの問題点」との対応を追跡しやすくするためのものです。
 - `InterestedNodeTypes` を宣言させることで、`RuleRegistry` がディスパッチテーブルを構築できます。
 - `Check` 内で問題を見つけたら `Ctx.Report(RuleId, Message, Node)` を呼びます。`Ctx` が `ts_node_start_point` からファイル名・行・列を引いて `TDiagnostic` を組み立てます。
 
@@ -238,6 +242,37 @@ ExitCode := AllDiagnostics が空でなければ 1、空なら 0
 | 3 | hallucination | 一般的な実在確認は×（型・レジストリ情報が必要）。RTL/FCLの既知シンボルとの突き合わせは部分的に○ | 2.3参照。サードパーティAPIは対象外 |
 | 4 | セキュリティ考慮漏れ | 依頼例（IAM）はPascalに非該当。SQL連結・シークレット直書きは○ | 2.4参照 |
 | 5 | 古い書き方 | `deprecated` マーク付きAPIの使用は○。マークなしの暗黙的な古さは× | 2.5参照 |
+| 6 | コンパイラ指令（方言）の衛生 | ○（指令は字句的な情報なので型解決もスコープ解決も不要） | 2.7参照。当初の5問題点への追加 |
+
+### 2.7 コンパイラ指令（方言）の衛生 — 2026-09-29 追加
+
+このカテゴリは当初の5問題点には含まれておらず、プロジェクトオーナーの提案（「`{$mode objfpc}` と `{$mode delphi}` の混在、およびモードに合わない構文の検知」）を受けて追加した。5問題点のいずれにもきれいに当てはまらない（スタイルの好みでもなく、防御的でもなく、hallucinationでもなく、実害が「古い書き方」ではなく黙ったデータ不正である）ため、独自の `RAWPACO-MODE-*` 接頭辞を与えている。
+
+**「モードに合わない構文」は調査のうえ意図的にスコープ外とした。** fpc 3.2.2 で実測したところ、オーナーが例示したモード不整合の構文はいずれもコンパイラ自身が弾く。
+
+| 試した構文 | コンパイラの結果 |
+|---|---|
+| objfpc モード + `@` を省略した手続き変数への代入 | `Error: Incompatible types: got "untyped"` |
+| objfpc モード + Delphi風ジェネリクス `TList<Integer>` | `Error: Generics without specialization cannot be used…` |
+| delphi モード + `specialize` | `Error: Identifier not found "specialize"` |
+
+2.3節と同じ論法（「コンパイラが捕まえられないケースに集中するのが現実的」）により、これらを重複して検知する価値は薄い。CIの `make` が既に失敗する。
+
+**コンパイラが黙るのは `$H`（`$LONGSTRINGS`）の状態**であり、このカテゴリの存在意義はそこにある。`var S: string; S := StringOfChar('x', 300); WriteLn(Length(S))` の実測:
+
+| 指令 | `Length(S)` |
+|---|---|
+| `{$mode objfpc}{$H+}` | 300 |
+| `{$mode objfpc}` | **255** |
+| `{$mode fpc}` / `{$mode tp}` / `{$mode macpas}` | **255** |
+| `{$mode delphi}` | 300（delphi系のみ `$H+` を含意する） |
+| `{$H+}{$mode objfpc}` | **255** — `{$mode}` が `$H` をモードの既定値に戻すため順序が効く |
+
+警告もヒントも出ないまま、256文字以降が黙って切り捨てられる。Lazarus が生成する全ユニットが `{$mode objfpc}{$H+}` を対で書いているのはこのためで、生成コードで `{$H+}` 側だけが落ちるのは現実に起こる失敗である。`{$mode}` が `$H` をリセットするため、「このファイルに `{$mode objfpc}` と `{$H+}` の両方があるか」という集合判定では `{$H+}{$mode objfpc}` の順序を誤る。指令はソース順の状態機械として畳み込む必要がある。その収集と解析（`{$h+ }`・`{$H+,I-}`・`{$LONGSTRINGS ON}` といった字句上の変種、および tree-sitter-pascal が `pp` ではなく `comment` として扱う旧形式 `(*$H+*)` を含む）は `src/CompilerDirectives.pas` が担う。
+
+モードの混在も検知可能で報告に値するが、こちらはコンパイラも警告する（`Misplaced global compiler switch, ignored`）。コンパイラが明らかにしないのは、無視された `{$mode}` の隣に書かれた `{$H+}`/`{$H-}` の方は効いてしまう点で、unit では `Error: Forward declaration not solved "F:AnsiString;"` という原因から遠いエラーとして現れる。
+
+現時点で意図的にスコープ外とするもの: `{$mode}` が**一切ない**ファイル（既定はコマンドラインや `fpc.cfg` で決まり rawpaco からは見えない）、および最初の `string` 使用**より後**に始まる `{$H-}` 区間（最初の出現のみを評価する）。
 
 ## 3. positive/negativeサンプルの配置・実行方法
 
@@ -355,6 +390,20 @@ false positive回避のしやすさ・実装の単純さ・価値の高さで優
 - 難しい点: 「同種API呼び出し」をどう定義するか（呼び出し名の完全一致に留めるか、`declUses`から見える特定ユニット由来の呼び出しに絞るか等）、および誤検知率の見積もり。
 - 担当: **Opus5**
 
+### P10: RAWPACO-MODE-001 `$H` がオフの状態での `string` 使用（255文字での黙った切り捨て）
+
+- 検知対象: 2.7節参照。`$H` の既定がオフのモードを宣言しており、その後に有効な `{$H+}`/`{$LONGSTRINGS ON}` が無く、かつ `string` キーワードを使っているファイル。
+- 重要度: Warning。主張（「この `string` は ShortString である」）は常に事実として正しいが、ShortString を選ぶことが意図的でありうる。fpc-source 全体での実測では 4894ファイル中45件で、ビルド用ユーティリティ（`compiler/utils/*`）と低レベルRTLに集中しており、そこでは意図的である。
+- 誤検知回避の門番: `{$I }`/`{$INCLUDE }` がある（`$H` 指令が include 先にありうる。`compiler/fpcdefs.inc` は実際に `{$H-}` を持つ）／`{$mode}`・`$H` 指令が条件ブロック内にある／`{$mode}` が1つも無い／未知のモード名／構文エラーを含む。
+- 担当: **Opus5**
+
+### P11: RAWPACO-MODE-002 同一ファイル内の異なる `{$mode}` 指令
+
+- 検知対象: 2.7節参照。条件コンパイル外にある、異なるモード名の `{$mode}` 指令が2つ以上。
+- 重要度: Warning（コンパイラも警告する。rawpaco の価値は原因を名指しすること）。
+- 誤検知回避の門番: 条件ブロック内の `{$mode}` は数えない（`{$ifdef FPC}{$mode objfpc}{$else}{$mode delphi}{$endif}` はどちらか一方が有効）／**同じ**モードの繰り返しは報告しない／root 直下に `unit`/`program`/`library` が無い断片は対象外。fpc-source 全体での実測は0件。
+- 担当: **Opus5**
+
 ## 7. 未決事項・提案（大きな方針転換になりうるもの・独断で決めていない事項）
 
 以下は本レビューで気づいたものの、既存ルールの削除やスコープの大幅変更に相当するため、提案に留め、断行していません。
@@ -384,3 +433,6 @@ false positive回避のしやすさ・実装の単純さ・価値の高さで優
 | P7 RAWPACO-HALLUC-001（RTLシンボル突き合わせhallucination検知） | **Opus5** |
 | P8 RAWPACO-DEFENSE-002（生成直後nilチェック） | Sonnet5 |
 | P9 RAWPACO-STYLE-002（エラーハンドリング不統一の近似検知） | **Opus5** |
+| P10 RAWPACO-MODE-001（`$H` オフのまま `string` を使用） | **Opus5** |
+| P11 RAWPACO-MODE-002（異なる `{$mode}` 指令の混在） | **Opus5** |
+| ASTHelpers / CompilerDirectives（共有ヘルパユニット） | **Opus5** |

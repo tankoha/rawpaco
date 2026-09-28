@@ -19,9 +19,9 @@ Design and implementation of this tool are split across multiple Claude models. 
 
 ## 状態 / Status
 
-lint ルールを9個実装済み（空exceptハンドラ・SQL文字列連結・シークレットのハードコード・自己矛盾する非推奨API使用・FPC RTL/FCLのdeprecatedシンボル使用・実在しないAPI(hallucination)・命名規則・生成直後の無意味なnilチェック・エラーハンドリングの不統一）。CIはLinux/Windows両方でビルド・テストし、本ツール自身のソースへの自己lintも警告ゼロを維持している。ルールごとの詳細・実装状況は [HANDOFF.md](HANDOFF.md) の「実装済みルール一覧」を参照。
+lint ルールを11個実装済み（空exceptハンドラ・SQL文字列連結・シークレットのハードコード・自己矛盾する非推奨API使用・FPC RTL/FCLのdeprecatedシンボル使用・実在しないAPI(hallucination)・命名規則・生成直後の無意味なnilチェック・エラーハンドリングの不統一・`$H`オフのままの`string`使用・`{$mode}`の混在）。CIはLinux/Windows両方でビルド・テストし、本ツール自身のソースへの自己lintも警告ゼロを維持している。ルールごとの詳細・実装状況は [HANDOFF.md](HANDOFF.md) の「実装済みルール一覧」を参照。
 
-9 lint rules are implemented (empty except handlers, SQL string concatenation, hardcoded secrets, self-contradictory deprecated-API use, deprecated FPC RTL/FCL symbols, hallucinated nonexistent APIs, naming conventions, redundant post-Create nil checks, and inconsistent error handling). CI builds and tests on both Linux and Windows, and self-linting (running the tool against its own source) stays at zero warnings. See the "Implemented rule list" table in [HANDOFF.md](HANDOFF.md) for per-rule details.
+11 lint rules are implemented (empty except handlers, SQL string concatenation, hardcoded secrets, self-contradictory deprecated-API use, deprecated FPC RTL/FCL symbols, hallucinated nonexistent APIs, naming conventions, redundant post-Create nil checks, inconsistent error handling, `string` used while `$H` is off, and mixed `{$mode}` directives). CI builds and tests on both Linux and Windows, and self-linting (running the tool against its own source) stays at zero warnings. See the "Implemented rule list" table in [HANDOFF.md](HANDOFF.md) for per-rule details.
 
 ## 使い方 / Usage
 
@@ -49,8 +49,8 @@ Requires FPC and a C compiler (gcc); verified against FPC 3.2.2, which CI also t
   Output format (default `text`). `github` emits GitHub Actions workflow commands for inline PR annotations; `json` is a machine-readable array for other tooling.
 - `--only=<id>[,<id>...]` / `--exclude=<id>[,<id>...]` — 有効化・無効化するルールを絞り込む（同時指定はエラー）。
   Scope which rules run (mutually exclusive; using both is an error).
-- `--fail-on=error|warning` — 終了コードを1にする最低重要度（既定は`error`）。ルールはError（即対応すべき欠陥: 空exceptハンドラ・SQLインジェクション・秘密情報のハードコード・実在しないAPI参照）とWarning（いずれ直すべきだが緊急ではないもの: 非推奨API・命名規則・冗長なnilチェック・エラーハンドリングの不統一）のいずれかに分類済み。既定では診断は形式に関わらず必ず出力されるが、Warning階層はビルドを失敗させない。`--fail-on=warning`（俗称「激辛モード」）を指定すると、診断が1件でもあれば終了コードが1になる従来の挙動を再現する。
-  Minimum severity that causes exit code 1 (default `error`). Every rule is classified as either Error (an actionable defect worth blocking a merge over: empty except handlers, SQL injection, hardcoded secrets, references to nonexistent APIs) or Warning (worth fixing eventually, not urgent: deprecated APIs, naming conventions, redundant nil checks, inconsistent error handling). Diagnostics are always printed regardless of format, but a Warning-tier diagnostic alone won't fail the build by default. Pass `--fail-on=warning` ("spicy mode") to restore the original behavior where any diagnostic fails the build.
+- `--fail-on=error|warning` — 終了コードを1にする最低重要度（既定は`error`）。ルールはError（即対応すべき欠陥: 空exceptハンドラ・SQLインジェクション・秘密情報のハードコード・実在しないAPI参照）とWarning（いずれ直すべきだが緊急ではないもの: 非推奨API・命名規則・冗長なnilチェック・エラーハンドリングの不統一・コンパイラ指令の衛生）のいずれかに分類済み。既定では診断は形式に関わらず必ず出力されるが、Warning階層はビルドを失敗させない。`--fail-on=warning`（俗称「激辛モード」）を指定すると、診断が1件でもあれば終了コードが1になる従来の挙動を再現する。
+  Minimum severity that causes exit code 1 (default `error`). Every rule is classified as either Error (an actionable defect worth blocking a merge over: empty except handlers, SQL injection, hardcoded secrets, references to nonexistent APIs) or Warning (worth fixing eventually, not urgent: deprecated APIs, naming conventions, redundant nil checks, inconsistent error handling, compiler-directive hygiene). Diagnostics are always printed regardless of format, but a Warning-tier diagnostic alone won't fail the build by default. Pass `--fail-on=warning` ("spicy mode") to restore the original behavior where any diagnostic fails the build.
 
 個別の誤検知や意図的な例外は、対象行または直前行に `// rawpaco:ignore <RuleId>` と書くと抑制できる。
 

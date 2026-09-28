@@ -18,6 +18,8 @@
 | RAWPACO-HALLUC-001 | FPC RTL/FCLに実在しない識別子(hallucination)検知 | 実装済み | `src/Rules/RuleHalluc001.pas`。設計書P7。positive 4件/negative 3件。DEPR-002とデータを共有。判定A=ユニット修飾された参照(`Math.Clamp`等)、判定B=修飾なし呼び出し(usesが全て既知ユニットの場合のみ)。fpc-source全体(4894ファイル)で誤検知ゼロを実測 |
 | RAWPACO-STYLE-001 | 命名規則チェック(設定ファイルベース) | 実装済み | `src/Rules/RuleStyle001.pas` + `src/RawpacoConfig.pas`。設計書P5。positive 3件/negative 3件 + `tests/config/`の設定4ケース。設定は`rawpaco.json`(JSON/fcl-json)。既定は型名`T`(例外クラス`E`も許可)・インターフェース`I`・ポインタ型`P`・classのprivate/protectedフィールド`F`のみ |
 | RAWPACO-DEFENSE-002 | 生成直後の無意味なnilチェック検知 | 実装済み | `src/Rules/RuleDefense002.pas`。設計書P8。positive 3件/negative 3件。`Obj := <何か>.Create`(括弧の有無両対応)の直後(同一`block`/`statements`内で隣接する次の文)が`if`/`ifElse`で`Assigned(Obj)`をチェックしている場合のみ検知 |
+| RAWPACO-MODE-001 | `$H`オフのまま`string`使用(255文字での黙った切り捨て) | 実装済み | `src/Rules/RuleMode001.pas` + `src/CompilerDirectives.pas`。設計書2.7節/P10。positive 10件/negative 4件。**`{$mode objfpc}`は`{$H+}`を含意しない**ので`string`がShortStringのままになり、256文字以上が警告なしで切り捨てられる(fpc 3.2.2で実測)。`{$H+}`を`{$mode}`より前に置くと`{$mode}`が`$H`を既定値に戻すため無効になるので、指令はソース順の状態機械として畳み込む。fpc-source全体(4894ファイル)で45件、いずれも主張は事実として正しい真陽性(`compiler/utils/*`等の意図的なShortString使用を含むためWarning階層) |
+| RAWPACO-MODE-002 | 同一ファイル内の異なる`{$mode}`指令 | 実装済み | `src/Rules/RuleMode002.pas`。設計書2.7節/P11。positive 3件/negative 2件。条件コンパイル外の`{$mode}`が2つ以上あり名前が異なる場合に報告。同名の重複は報告しない。fpc-source全体で0件 |
 | RAWPACO-STYLE-002 | 同一ファイル内のエラーハンドリング不統一(近似) | 実装済み | `src/Rules/RuleStyle002.pas`。設計書P9。positive 5件/negative 3件。固定リストの失敗しうるAPI(`AssignFile`/`CloseFile`/`Reset`/`Rewrite`/`BlockRead`/`BlockWrite` と、`uses SysUtils`がある場合のみ`StrToInt`系8種)が、同一ファイル内でtry-except配下と素通しの両方に現れる場合、素通し側を報告。fpc-source全体(4894ファイル)で誤検知ゼロを実測 |
 
 ## 見送ったルール（検討済み・意図的に未実装）

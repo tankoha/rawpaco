@@ -23,6 +23,7 @@ This document is written on the assumption that Sonnet5 will handle the implemen
   - [2.4 Overlooked Security](#24-overlooked-security)
   - [2.5 Outdated Practices (Deprecated APIs from Stale Training Data, etc.)](#25-outdated-practices-deprecated-apis-from-stale-training-data-etc)
   - [2.6 Summary Table](#26-summary-table)
+  - [2.7 Compiler-Directive (Dialect) Hygiene](#27-compiler-directive-dialect-hygiene--added-2026-09-29)
 - [3. Placement and Execution of positive/negative Samples](#3-placement-and-execution-of-positivenegative-samples)
 - [4. Diagnostic Output Format](#4-diagnostic-output-format)
   - [4.1 Severity-based exit-code control: adopted, lenient by default](#41-severity-based-exit-code-control-adopted-lenient-by-default-2026-08-04-revised-owner-fable5)
@@ -44,6 +45,8 @@ This document is written on the assumption that Sonnet5 will handle the implemen
   - [P7: RAWPACO-HALLUC-001 Cross-checking against FPC RTL/FCL's list of known symbols](#p7-rawpaco-halluc-001-cross-checking-against-fpc-rtlfcls-list-of-known-symbols)
   - [P8: RAWPACO-DEFENSE-002 Meaningless nil check right after construction](#p8-rawpaco-defense-002-meaningless-nil-check-right-after-construction)
   - [P9: RAWPACO-STYLE-002 Inconsistent error handling within the same file (approximation)](#p9-rawpaco-style-002-inconsistent-error-handling-within-the-same-file-approximation)
+  - [P10: RAWPACO-MODE-001 `string` used while `$H` is off (silent 255-char truncation)](#p10-rawpaco-mode-001-string-used-while-h-is-off-silent-255-char-truncation)
+  - [P11: RAWPACO-MODE-002 Two different `{$mode}` directives in the same file](#p11-rawpaco-mode-002-two-different-mode-directives-in-the-same-file)
 - [7. Open Questions / Proposals (things that could be major policy shifts, not decided unilaterally)](#7-open-questions--proposals-things-that-could-be-major-policy-shifts-not-decided-unilaterally)
 - [8. Owner Assignment Summary](#8-owner-assignment-summary)
 
@@ -71,6 +74,7 @@ rawpaco.lpr (CLI entry point) … parses CLI flags, loads the config file, appli
        ├─ Diagnostics.pas  … TLintContext, the TDiagnostic record, severity, the text/github/json formatters, ignore-comment suppression
        └─ Rules/*.pas      … rule bodies (one unit per rule), all listed in Rules/AllRules.pas
             ├─ ASTHelpers.pas … node-traversal helpers shared by several rules (field-child lookup, uses/declaration-name collection)
+            ├─ CompilerDirectives.pas … collects and parses {$...} / (*$...*) directives (used by the RAWPACO-MODE-* rules)
             └─ FPCSymbols.pas … loader for data/fpc-rtl-symbols.txt (used by RAWPACO-DEPR-002 / RAWPACO-HALLUC-001)
 
 TSBindings.pas … cdecl external declarations for the tree-sitter C API, plus the {$L} links to the
@@ -135,7 +139,7 @@ type
   end;
 ```
 
-- `RuleId` follows a uniform `RAWPACO-<category>-<number>` format (example categories: `SEC` = security, `STYLE` = consistency/naming, `DEPR` = deprecated API, `DEFENSE` = excessive defensiveness, `HALLUC` = hallucination). The category exists to make it easy to trace back to the "five problems".
+- `RuleId` follows a uniform `RAWPACO-<category>-<number>` format (example categories: `SEC` = security, `STYLE` = consistency/naming, `DEPR` = deprecated API, `DEFENSE` = excessive defensiveness, `HALLUC` = hallucination, `MODE` = compiler-directive/dialect hygiene, added later — see 2.7). The category exists to make it easy to trace back to the "five problems".
 - Declaring `InterestedNodeTypes` lets `RuleRegistry` build the dispatch table.
 - When `Check` finds a problem, it calls `Ctx.Report(RuleId, Message, Node)`. `Ctx` derives the file name/line/column from `ts_node_start_point` and assembles a `TDiagnostic`.
 
@@ -246,6 +250,37 @@ Of the five, this is the hardest to address with syntax analysis alone.
 | 3 | Hallucination | General existence-checking: no (needs type/registry info). Cross-checking against known RTL/FCL symbols: partially yes | See 2.3. Third-party APIs out of scope |
 | 4 | Overlooked security | The original example (IAM) doesn't apply to Pascal. SQL concatenation / hardcoded secrets: yes | See 2.4 |
 | 5 | Outdated practices | Usage of APIs marked `deprecated`: yes. Implicit staleness with no mark: no | See 2.5 |
+| 6 | Compiler-directive (dialect) hygiene | Yes — directives are lexical, so this needs neither type nor scope resolution | See 2.7. Added after the original five |
+
+### 2.7 Compiler-Directive (Dialect) Hygiene — added 2026-09-29
+
+This category was not among the original five problems; it was added on the project owner's proposal ("detecting a mix of `{$mode objfpc}` and `{$mode delphi}`, and syntax that doesn't match the mode"). It gets its own `RAWPACO-MODE-*` prefix because it maps onto none of the five cleanly: it is not a style preference, not defensiveness, not a hallucination, and the damage is a silent data bug rather than an outdated practice.
+
+**"Syntax that doesn't match the mode" was investigated and deliberately left out of scope.** Measured against fpc 3.2.2, the mode-mismatched constructs the owner gave as examples are all rejected by the compiler itself:
+
+| Construct tried | Compiler result |
+|---|---|
+| objfpc mode + procedural-variable assignment without `@` | `Error: Incompatible types: got "untyped"` |
+| objfpc mode + Delphi-style generics `TList<Integer>` | `Error: Generics without specialization cannot be used…` |
+| delphi mode + `specialize` | `Error: Identifier not found "specialize"` |
+
+By the same reasoning as 2.3 ("it's realistic for rawpaco to focus on cases the compiler cannot catch"), re-detecting these adds little: CI's `make` already fails on them.
+
+**What the compiler is silent about is the `$H` (`$LONGSTRINGS`) state**, and that is where this category earns its place. Measured behaviour of `var S: string; S := StringOfChar('x', 300); WriteLn(Length(S))`:
+
+| Directives | `Length(S)` |
+|---|---|
+| `{$mode objfpc}{$H+}` | 300 |
+| `{$mode objfpc}` | **255** |
+| `{$mode fpc}` / `{$mode tp}` / `{$mode macpas}` | **255** |
+| `{$mode delphi}` | 300 (only the delphi modes imply `$H+`) |
+| `{$H+}{$mode objfpc}` | **255** — `{$mode}` resets `$H` to the mode's default, so order matters |
+
+No warning, no hint: 256 characters and beyond are silently truncated. This is exactly why every unit Lazarus generates writes `{$mode objfpc}{$H+}` as a pair, and dropping the `{$H+}` half is a realistic failure for generated code. Because `{$mode}` resets `$H`, a set-membership test ("does this file contain both `{$mode objfpc}` and `{$H+}`?") gets the `{$H+}{$mode objfpc}` ordering wrong; directives must be folded in source order as a state machine. `src/CompilerDirectives.pas` owns that collection and parsing, including the lexical variants (`{$h+ }`, `{$H+,I-}`, `{$LONGSTRINGS ON}`, and the old-style `(*$H+*)` that tree-sitter-pascal reports as a `comment` rather than a `pp` node).
+
+Mixing modes is also detectable and worth reporting, though the compiler does warn there (`Misplaced global compiler switch, ignored`): what it does *not* make clear is that a `{$H+}`/`{$H-}` written alongside the ignored `{$mode}` still takes effect, which in a unit surfaces as a confusing `Error: Forward declaration not solved "F:AnsiString;"` far from the cause.
+
+Deliberately out of scope for now: a file with **no** `{$mode}` at all (the default comes from the command line or `fpc.cfg`, which rawpaco cannot see), and an `{$H-}` region that begins *after* the first `string` usage (only the first occurrence is evaluated).
 
 ## 3. Placement and Execution of positive/negative Samples
 
@@ -428,6 +463,20 @@ Prioritized by how easy it is to avoid false positives, implementation simplicit
 - What's hard: how to define "the same kind of API call" (limit to exact call-name matches, or narrow it to calls reachable from specific units seen in `declUses`?), and estimating the false-positive rate.
 - Owner: **Opus5**
 
+### P10: RAWPACO-MODE-001 `string` used while `$H` is off (silent 255-char truncation)
+
+- Detection target: see 2.7. The file declares a `{$mode}` whose `$H` default is off, no effective `{$H+}`/`{$LONGSTRINGS ON}` follows it, and the file uses the `string` keyword.
+- Severity: Warning. The claim ("this `string` is a ShortString") is factually always true, but choosing ShortString can be deliberate — measured on fpc-source, 45 of 4894 files match, concentrated in build-time utilities (`compiler/utils/*`) and low-level RTL, where it is intentional.
+- False-positive gates: `{$I }`/`{$INCLUDE }` present (the `$H` directive may live in the include — `compiler/fpcdefs.inc` really does carry `{$H-}`), a `{$mode}`/`$H` directive inside a conditional block, no `{$mode}` at all, an unknown mode name, or a file with syntax errors.
+- Owner: **Opus5**
+
+### P11: RAWPACO-MODE-002 Two different `{$mode}` directives in the same file
+
+- Detection target: see 2.7. Two unconditional `{$mode}` directives naming different modes.
+- Severity: Warning (the compiler already warns; rawpaco's value is naming the cause).
+- False-positive gates: mode directives inside conditional blocks are not counted (`{$ifdef FPC}{$mode objfpc}{$else}{$mode delphi}{$endif}` selects one, not both); repeating the *same* mode is not reported; `{$i}` fragments (no `unit`/`program`/`library` at the root) are skipped. Measured on fpc-source: 0 hits.
+- Owner: **Opus5**
+
 ## 7. Open Questions / Proposals (things that could be major policy shifts, not decided unilaterally)
 
 The following were noticed during this review but amount to deleting existing rules or drastically changing scope, so they are left as proposals rather than decided outright.
@@ -457,3 +506,6 @@ The following were noticed during this review but amount to deleting existing ru
 | P7 RAWPACO-HALLUC-001 (RTL symbol cross-check hallucination detection) | **Opus5** |
 | P8 RAWPACO-DEFENSE-002 (nil check right after construction) | Sonnet5 |
 | P9 RAWPACO-STYLE-002 (approximate inconsistent-error-handling detection) | **Opus5** |
+| P10 RAWPACO-MODE-001 (`$H` off while `string` is used) | **Opus5** |
+| P11 RAWPACO-MODE-002 (two different `{$mode}` directives) | **Opus5** |
+| ASTHelpers / CompilerDirectives (shared helper units) | **Opus5** |

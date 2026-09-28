@@ -33,6 +33,11 @@ unit RuleHalluc001;
 //   - `{$I xxx.inc}` / `{$INCLUDE ...}` を含むファイルでは、include 先の宣言が
 //     構文木に現れないため「ファイル内で宣言されていない」判定が成立しない。
 //     判定Bを無効にする。
+//   - root 直下に `unit`/`program`/`library` が無いファイル（`ASTHelpers.
+//     IsCompilationUnit` が False）も判定Bの対象外。FPC のソースには `{$i}` で
+//     他ファイルに取り込まれる前提の断片（unit ヘッダも uses も持たない
+//     .pp/.inc）が多数あり、単体で lint すると宣言の大半が見えない状態で
+//     判定Bが動いてしまう。
 //   - `with Rec do ... end` の本体は、裸の名前がレコード/オブジェクトのメンバを
 //     指しうるので走査しない（RAWPACO-DEPR-002 で実測した誤検知要因と同じ）。
 //   - `inherited Foo` は継承元のメソッド名であり、修飾なし呼び出しではない。
@@ -108,27 +113,6 @@ begin
   Result := (Pos('{$I ', Upper) > 0) or (Pos('{$INCLUDE', Upper) > 0) or
             (Pos('(*$I ', Upper) > 0) or (Pos('(*$INCLUDE', Upper) > 0) or
             (Pos('{$MACRO', Upper) > 0) or (Pos('(*$MACRO', Upper) > 0);
-end;
-
-// root 直下に unit / program / library があるか。
-// FPC のソースには `{$i}` で他のファイルに取り込まれる前提の「断片」
-// （unit ヘッダも uses も持たない .pp/.inc）が多数あり、それを単体で lint すると
-// 宣言の大半が見えない状態で判定Bが動いてしまう。断片は判定Bの対象外とする。
-function IsCompilationUnit(const Root: TSNode): Boolean;
-var
-  Count, I: LongWord;
-  T: PAnsiChar;
-begin
-  Result := False;
-  Count := ts_node_named_child_count(Root);
-  I := 0;
-  while I < Count do
-  begin
-    T := ts_node_type(ts_node_named_child(Root, I));
-    if (T = 'unit') or (T = 'program') or (T = 'library') then
-      Exit(True);
-    Inc(I);
-  end;
 end;
 
 function THallucScan.IsDeclaredHere(const Name: string): Boolean;
