@@ -66,29 +66,12 @@ const
 // になる。ユニット冒頭コメント参照)。
 function IsCreateCall(const RhsNode: TSNode; Ctx: TLintContext): Boolean;
 var
-  EntityNode, DotNode, DotRhsNode: TSNode;
-  HasDotRhs: Boolean;
-  NodeType: PAnsiChar;
+  TypeName: string;
 begin
-  Result := False;
-  NodeType := ts_node_type(RhsNode);
-
-  if NodeType = 'exprDot' then
-    DotNode := RhsNode
-  else if NodeType = 'exprCall' then
-  begin
-    if not (FindFieldChild(RhsNode, 'entity', EntityNode) and
-            (ts_node_type(EntityNode) = 'exprDot')) then
-      Exit; // Foo()のような単純呼び出しはexprDotを経由しないため対象外
-    DotNode := EntityNode;
-  end
-  else
-    Exit; // 単純呼び出しでも.呼び出しでもない(定数・別の式等)は対象外
-
-  HasDotRhs := FindFieldChild(DotNode, 'rhs', DotRhsNode);
-
-  Result := HasDotRhs and (ts_node_type(DotRhsNode) = 'identifier') and
-    (UpperCase(Ctx.GetNodeText(DotRhsNode)) = 'CREATE');
+  // 「`.Create` をコンストラクタとみなす」近似をこのルールが受け入れることは
+  // ユニット冒頭コメントに明記済み。形の判定は ASTHelpers に集約してある
+  // (RAWPACO-MEM-001/002 と共有)。型名はこのルールでは使わない。
+  Result := TryGetConstructorCallTypeName(RhsNode, Ctx, TypeName);
 end;
 
 // assignmentノードが`<identifier> := <何か>.Create(...)`の形であれば、

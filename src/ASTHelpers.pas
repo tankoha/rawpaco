@@ -15,9 +15,13 @@ unit ASTHelpers;
 // 判定方針とは独立しているため、ここに集約して1箇所で保守する。
 //
 // 逆に、ここに置かないと決めたもの（境界の判断。将来の追加時の指針）:
-//   - `IsCreateCall`（RuleDefense002）のように「`.Create` という名前を
-//     コンストラクタとみなす」といったヒューリスティックを含むものは、
-//     その近似の責任をどのルールが負うのかが曖昧になるため各ルールに残す。
+//   - 判定の意味づけ（何を問題とみなすか）を含むものは各ルールに残す。当初は
+//     「`.Create` をコンストラクタとみなす」ヒューリスティックを含む
+//     `IsCreateCall`（RuleDefense002）も理由の1つとして挙げていたが、
+//     RAWPACO-MEM-001/002 が2人目の利用者として現れ、同じ木の形
+//     （`exprDot` / `exprCall`+entity の2パターン）を二重に読む状態になったため、
+//     **形の判定だけを `TryGetConstructorCallTypeName` として下に切り出した**
+//     （近似を受け入れるかどうかの判断は各ルールに残してある）。
 //   - 1ユニットしか使っていない補助関数（`HasChildOfType` 等）は、重複が
 //     存在しない段階で移すと利用箇所から遠いだけで利点がないため残す。
 //     2つ目の利用者が現れた時点でここへ移す。
@@ -98,6 +102,25 @@ procedure CollectDeclaredNames(const Node: TSNode; Ctx: TLintContext; Names: TNa
 // Units の中から Name と（大文字小文字を無視して）一致するものを、元の綴りの
 // まま返す。見つからなければ空文字列。
 function FindUnitByName(Units: TUnitList; const Name: string): string;
+
+// 式ノードが `<何か>.Create` または `<何か>.Create(...)` の形（括弧の有無を
+// 問わない）なら True を返し、`.Create` の左側のテキスト（型名として書かれて
+// いる部分）を TypeName に入れる。
+//
+// **ここに含まれるヒューリスティック**: 「`.Create` という名前のメソッド呼び出しは
+// コンストラクタである」という近似が入っている。rawpaco は型解決をしないため、
+// 同名のファクトリメソッドやレコードの `class function Create` と区別できない。
+// Object Pascal では `.Create` = コンストラクタという命名慣習が非常に強いため
+// 実用上はこの近似で足りるが、**この近似を受け入れるかどうかの判断は各ルールの
+// 責任**である（このユニットは形の判定だけを提供する）。RAWPACO-DEFENSE-002 と
+// RAWPACO-MEM-001/002 がいずれもこの近似を前提にしており、2ルールで同じ木の形を
+// 二重に読んでいたため、形の判定部分だけをここへ集約した。
+//
+// tree-sitter-pascal(v0.10.2) の形（実機確認済み）:
+//   `Obj := TFoo.Create;`   -> rhs が `exprDot`(lhs=TFoo, rhs=Create)
+//   `Obj := TFoo.Create();` -> rhs が `exprCall`(entity=`exprDot`)
+function TryGetConstructorCallTypeName(const Node: TSNode; Ctx: TLintContext;
+  out TypeName: string): Boolean;
 
 // root 直下に `unit` / `program` / `library` があるか。
 //
@@ -224,6 +247,37 @@ begin
   for U in Units do
     if CompareText(U, Name) = 0 then
       Exit(U);
+end;
+
+function TryGetConstructorCallTypeName(const Node: TSNode; Ctx: TLintContext;
+  out TypeName: string): Boolean;
+var
+  EntityNode, DotNode, DotLhsNode, DotRhsNode: TSNode;
+  NodeType: PAnsiChar;
+begin
+  Result := False;
+  TypeName := '';
+  NodeType := ts_node_type(Node);
+
+  if NodeType = 'exprDot' then
+    DotNode := Node
+  else if NodeType = 'exprCall' then
+  begin
+    if not (FindFieldChild(Node, 'entity', EntityNode) and
+            (ts_node_type(EntityNode) = 'exprDot')) then
+      Exit; // Foo()のような単純呼び出しはexprDotを経由しないため対象外
+    DotNode := EntityNode;
+  end
+  else
+    Exit; // 単純呼び出しでも.呼び出しでもない(定数・別の式等)は対象外
+
+  if not FindFieldChild(DotNode, 'rhs', DotRhsNode) then Exit;
+  if ts_node_type(DotRhsNode) <> 'identifier' then Exit;
+  if UpperCase(Ctx.GetNodeText(DotRhsNode)) <> 'CREATE' then Exit;
+
+  if FindFieldChild(DotNode, 'lhs', DotLhsNode) then
+    TypeName := Ctx.GetNodeText(DotLhsNode);
+  Result := True;
 end;
 
 function IsCompilationUnit(const Root: TSNode): Boolean;

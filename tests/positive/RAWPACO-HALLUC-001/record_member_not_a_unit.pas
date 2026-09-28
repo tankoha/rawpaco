@@ -29,9 +29,14 @@ var
   L: TStringList;
 begin
   Math.X := 1.0;
+  // try..finally で囲んでいるのは RAWPACO-MEM-002 を発火させないため
+  // (このフィクスチャの目的は「Math.X をユニット参照と誤認しないこと」の確認)。
   L := TStringList.Create;
-  L.Sorted := True;
-  L.Free;
+  try
+    L.Sorted := True;
+  finally
+    L.Free;
+  end;
 end;
 
 end.

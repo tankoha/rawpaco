@@ -24,6 +24,7 @@ This document is written on the assumption that Sonnet5 will handle the implemen
   - [2.5 Outdated Practices (Deprecated APIs from Stale Training Data, etc.)](#25-outdated-practices-deprecated-apis-from-stale-training-data-etc)
   - [2.6 Summary Table](#26-summary-table)
   - [2.7 Compiler-Directive (Dialect) Hygiene](#27-compiler-directive-dialect-hygiene--added-2026-09-29)
+  - [2.8 Memory Management](#28-memory-management--added-2026-09-29)
 - [3. Placement and Execution of positive/negative Samples](#3-placement-and-execution-of-positivenegative-samples)
 - [4. Diagnostic Output Format](#4-diagnostic-output-format)
   - [4.1 Severity-based exit-code control: adopted, lenient by default](#41-severity-based-exit-code-control-adopted-lenient-by-default-2026-08-04-revised-owner-fable5)
@@ -47,6 +48,8 @@ This document is written on the assumption that Sonnet5 will handle the implemen
   - [P9: RAWPACO-STYLE-002 Inconsistent error handling within the same file (approximation)](#p9-rawpaco-style-002-inconsistent-error-handling-within-the-same-file-approximation)
   - [P10: RAWPACO-MODE-001 `string` used while `$H` is off (silent 255-char truncation)](#p10-rawpaco-mode-001-string-used-while-h-is-off-silent-255-char-truncation)
   - [P11: RAWPACO-MODE-002 Two different `{$mode}` directives in the same file](#p11-rawpaco-mode-002-two-different-mode-directives-in-the-same-file)
+  - [P12: RAWPACO-MEM-001 Object created into a local variable and never freed](#p12-rawpaco-mem-001-object-created-into-a-local-variable-and-never-freed)
+  - [P13: RAWPACO-MEM-002 Object freed, but not from a `finally` block](#p13-rawpaco-mem-002-object-freed-but-not-from-a-finally-block)
 - [7. Open Questions / Proposals (things that could be major policy shifts, not decided unilaterally)](#7-open-questions--proposals-things-that-could-be-major-policy-shifts-not-decided-unilaterally)
 - [8. Owner Assignment Summary](#8-owner-assignment-summary)
 
@@ -139,7 +142,7 @@ type
   end;
 ```
 
-- `RuleId` follows a uniform `RAWPACO-<category>-<number>` format (example categories: `SEC` = security, `STYLE` = consistency/naming, `DEPR` = deprecated API, `DEFENSE` = excessive defensiveness, `HALLUC` = hallucination, `MODE` = compiler-directive/dialect hygiene, added later — see 2.7). The category exists to make it easy to trace back to the "five problems".
+- `RuleId` follows a uniform `RAWPACO-<category>-<number>` format (example categories: `SEC` = security, `STYLE` = consistency/naming, `DEPR` = deprecated API, `DEFENSE` = excessive defensiveness, `HALLUC` = hallucination, `MODE` = compiler-directive/dialect hygiene, `MEM` = memory management; the last two were added later — see 2.7 and 2.8). The category exists to make it easy to trace back to the "five problems".
 - Declaring `InterestedNodeTypes` lets `RuleRegistry` build the dispatch table.
 - When `Check` finds a problem, it calls `Ctx.Report(RuleId, Message, Node)`. `Ctx` derives the file name/line/column from `ts_node_start_point` and assembles a `TDiagnostic`.
 
@@ -251,6 +254,7 @@ Of the five, this is the hardest to address with syntax analysis alone.
 | 4 | Overlooked security | The original example (IAM) doesn't apply to Pascal. SQL concatenation / hardcoded secrets: yes | See 2.4 |
 | 5 | Outdated practices | Usage of APIs marked `deprecated`: yes. Implicit staleness with no mark: no | See 2.5 |
 | 6 | Compiler-directive (dialect) hygiene | Yes — directives are lexical, so this needs neither type nor scope resolution | See 2.7. Added after the original five |
+| 7 | Memory management (missing `Free`) | Partially — "created and never freed here" is decidable; whether ownership moved is not | See 2.8. Added after the original five |
 
 ### 2.7 Compiler-Directive (Dialect) Hygiene — added 2026-09-29
 
@@ -281,6 +285,28 @@ No warning, no hint: 256 characters and beyond are silently truncated. This is e
 Mixing modes is also detectable and worth reporting, though the compiler does warn there (`Misplaced global compiler switch, ignored`): what it does *not* make clear is that a `{$H+}`/`{$H-}` written alongside the ignored `{$mode}` still takes effect, which in a unit surfaces as a confusing `Error: Forward declaration not solved "F:AnsiString;"` far from the cause.
 
 Deliberately out of scope for now: a file with **no** `{$mode}` at all (the default comes from the command line or `fpc.cfg`, which rawpaco cannot see), and an `{$H-}` region that begins *after* the first `string` usage (only the first occurrence is evaluated).
+
+### 2.8 Memory Management — added 2026-09-29
+
+Also added on the owner's proposal: "an object `Create`d into a local variable with no `try..finally ... Free` in the same routine". This too maps onto none of the original five, so it gets a `RAWPACO-MEM-*` prefix. The owner's framing — that this is where AI-written FPC code does the most damage — is consistent with what FPC itself offers: there is no `ARC` for plain classes, and the compiler never warns about a missing `Free`.
+
+Two rules come out of one analysis:
+
+| Rule | Condition | Why this severity |
+|---|---|---|
+| `RAWPACO-MEM-001` | No `Free`/`Destroy`/`FreeAndNil` for that variable anywhere in the routine | **Error** — leaks on *every* call, and the symptom (growth over hours) is far from the cause |
+| `RAWPACO-MEM-002` | Freed, but never from a `finally` (or `except`) block | **Warning** — leaks only on the exception path, so a routine that cannot raise is unaffected |
+
+**The dominant false-positive source is ownership transfer**, and two concrete forms were found by measuring against fpc-source rather than by reasoning:
+
+1. **`TComponent.Create(AOwner)`.** Passing an owner to the constructor hands the free to the owner. `packages/fcl-report`'s demos are full of `p := TFPReportPage.Create(rpt);`, and before this was gated the rule produced **91 false positives** there alone. The adopted gate: a constructor call with any argument other than a single `nil` is skipped entirely. `TFileStream.Create('f', fmOpenRead)` is skipped too — a miss, accepted under CLAUDE.md rule 5.
+2. **Passing the object to something else.** The rule only judges a variable whose every appearance is `L.<member>` (an `exprDot` lhs) or the creating assignment's target; anything else (`List.Add(L)`, `Result := L`, `FField := L`, `with L do`) means ownership may have moved, so the variable is abandoned. `FreeAndNil(L)` is the one argument-passing form counted as a free instead. Getting this wrong in a subtle way cost a measurement round: the first version stopped descending into a non-constructor assignment's right-hand side, so `aliassym := cabsolutevarsym.create_ref(..., sl);` in `compiler/symcreat.pas` hid the fact that `sl` had been handed off.
+
+After both gates, fpc-source (4894 files) yields **10 MEM-001 hits, all genuine leaks in FPC's own test code, and 0 false positives**; MEM-002 yields 48, all matching the pattern (created, used, freed at the end with no `try..finally`) — the compiler's own sources do this deliberately, which is why it is Warning-tier.
+
+Other gates, each a case where syntax cannot answer the question: more than one creation for the same variable (no path analysis), a declared type starting with `I` (interfaces are reference-counted and must *not* be freed by hand), a type declared as a `record`/`object` in the same file (an advanced record's `Create` needs no `Free`), a free that happens inside a nested procedure (whether that procedure is called from a `finally` is inter-procedural, so MEM-002 abstains while MEM-001 still counts the free), and files with syntax errors.
+
+Known residual risk, accepted: a `record` type declared *outside* the file (`TTimeSpan.Create` and friends) is indistinguishable from a class, so MEM-001 could flag it. Resolving that needs class-vs-record information in `data/fpc-rtl-symbols.txt`; the measurement did not surface such a case.
 
 ## 3. Placement and Execution of positive/negative Samples
 
@@ -477,6 +503,20 @@ Prioritized by how easy it is to avoid false positives, implementation simplicit
 - False-positive gates: mode directives inside conditional blocks are not counted (`{$ifdef FPC}{$mode objfpc}{$else}{$mode delphi}{$endif}` selects one, not both); repeating the *same* mode is not reported; `{$i}` fragments (no `unit`/`program`/`library` at the root) are skipped. Measured on fpc-source: 0 hits.
 - Owner: **Opus5**
 
+### P12: RAWPACO-MEM-001 Object created into a local variable and never freed
+
+- Detection target: see 2.8. A local whose only appearances are `L.<member>` and the creating assignment, created exactly once by an argument-less (or `nil`-argument) constructor, with no `Free`/`Destroy`/`FreeAndNil` anywhere in the routine.
+- Severity: **Error** (leaks on every call).
+- Measured on fpc-source: 10 hits, all genuine leaks in FPC's own test code, 0 false positives.
+- Owner: **Opus5**
+
+### P13: RAWPACO-MEM-002 Object freed, but not from a `finally` block
+
+- Detection target: see 2.8. Same candidate set as P12, but a free exists and none of them sits under a `finally`/`except` field, and none is inside a nested procedure.
+- Severity: Warning (leaks only when something between the constructor and the free raises).
+- Measured on fpc-source: 48 hits, all matching the pattern; the compiler's own sources use it deliberately.
+- Owner: **Opus5**
+
 ## 7. Open Questions / Proposals (things that could be major policy shifts, not decided unilaterally)
 
 The following were noticed during this review but amount to deleting existing rules or drastically changing scope, so they are left as proposals rather than decided outright.
@@ -509,3 +549,5 @@ The following were noticed during this review but amount to deleting existing ru
 | P10 RAWPACO-MODE-001 (`$H` off while `string` is used) | **Opus5** |
 | P11 RAWPACO-MODE-002 (two different `{$mode}` directives) | **Opus5** |
 | ASTHelpers / CompilerDirectives (shared helper units) | **Opus5** |
+| P12 RAWPACO-MEM-001 (object never freed) | **Opus5** |
+| P13 RAWPACO-MEM-002 (freed outside a `finally`) | **Opus5** |
