@@ -58,15 +58,24 @@ rawpaco は tree-sitter-pascal による**構文解析のみ**を行うツール
 ### 1.1 全体アーキテクチャ
 
 ```
-rawpaco.lpr (CLIエントリポイント)
-  └─ LintDriver.pas   … 対象ファイル列挙、パース、走査、診断集約、出力、終了コード決定
-       ├─ ASTWalker.pas   … TSNodeツリーを tree-sitter cursor APIで走査する汎用ドライバ
-       ├─ RuleRegistry.pas … ルールの登録・ノード種別ごとのディスパッチテーブル
-       ├─ Diagnostics.pas  … TDiagnostic レコード、出力フォーマッタ
-       └─ Rules/*.pas      … ルール本体（1ルール1ユニット）
+rawpaco.lpr (CLIエントリポイント) … CLIフラグのパース、設定ファイルの読み込み、ルールフィルタの適用
+  ├─ RawpacoConfig.pas  … rawpaco.json の読み込みと検証（fcl-json）
+  └─ LintDriver.pas     … 対象ファイル列挙、パース、走査、診断集約、出力、終了コード決定
+       ├─ ASTWalker.pas    … TSNodeツリーの汎用的な深さ優先走査。ノードごとに RuleRegistry のディスパッチャを呼ぶ
+       ├─ RuleRegistry.pas … ルールインターフェース、ルールの登録、ノード種別ごとのディスパッチテーブル、--only/--exclude によるフィルタ
+       ├─ Diagnostics.pas  … TLintContext、TDiagnostic レコード、重要度、text/github/json フォーマッタ、抑制コメントの処理
+       └─ Rules/*.pas      … ルール本体（1ルール1ユニット）。すべて Rules/AllRules.pas に列挙する
+            ├─ ASTHelpers.pas … 複数ルールが共有するノード走査補助（フィールド子の取得、uses・宣言名の収集）
+            └─ FPCSymbols.pas … data/fpc-rtl-symbols.txt のローダ（RAWPACO-DEPR-002 / RAWPACO-HALLUC-001 が使用）
+
+TSBindings.pas … tree-sitter C API の cdecl 外部宣言と、vendor/ からビルドしたオブジェクトへの {$L} リンク。
+                 TSNode を触る上記すべてのユニットが使用する。
 ```
 
-現状の `src/rawpaco.lpr` は tree-sitter-pascal が動くことを確認するだけの自己チェックプログラムであり、上記の構造はまだ存在しません。ルール第1号の実装時にあわせて `LintDriver`/`ASTWalker`/`RuleRegistry`/`Diagnostics` を切り出すことを想定しています。（担当: Sonnet5）
+この構造は実装済みです。2点補足があります。
+
+- `ASTWalker.pas` は `ts_node_named_child` による素朴な再帰で走査しており、1.2節で触れているカーソルAPIは**使っていません**。1.2節でもカーソルAPIは「実際に必要になったら採用する最適化」として挙げており、現時点ではその必要が生じていないためです。
+- `Rules/AllRules.pas` が存在する理由は、FPC に実行時のアセンブリスキャンの仕組みがないためです。ルールユニットの `initialization` セクション（`RegisterRule` の呼び出し）は、そのユニットがどこかから実際に `uses` されて初めて実行されます。したがってルールを追加するたびに `AllRules.pas` への追記が必須で、忘れるとそのルールは静かに無効なままになります。
 
 ### 1.2 TSBindings.pas の拡張が必要
 

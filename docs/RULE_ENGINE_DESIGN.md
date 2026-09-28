@@ -63,15 +63,24 @@ For this reason, the design below consistently distinguishes between what can be
 ### 1.1 Overall Architecture
 
 ```
-rawpaco.lpr (CLI entry point)
-  └─ LintDriver.pas   … enumerates target files, parses, walks, aggregates diagnostics, outputs, decides exit code
-       ├─ ASTWalker.pas   … generic driver that walks the TSNode tree via the tree-sitter cursor API
-       ├─ RuleRegistry.pas … rule registration and the per-node-type dispatch table
-       ├─ Diagnostics.pas  … the TDiagnostic record, output formatter
-       └─ Rules/*.pas      … rule bodies (one unit per rule)
+rawpaco.lpr (CLI entry point) … parses CLI flags, loads the config file, applies the rule filter
+  ├─ RawpacoConfig.pas  … loads and validates rawpaco.json (fcl-json)
+  └─ LintDriver.pas     … enumerates target files, parses, walks, aggregates diagnostics, outputs, decides exit code
+       ├─ ASTWalker.pas    … generic depth-first traversal of the TSNode tree, calling RuleRegistry's dispatcher per node
+       ├─ RuleRegistry.pas … the rule interface, rule registration, the per-node-type dispatch table, --only/--exclude filtering
+       ├─ Diagnostics.pas  … TLintContext, the TDiagnostic record, severity, the text/github/json formatters, ignore-comment suppression
+       └─ Rules/*.pas      … rule bodies (one unit per rule), all listed in Rules/AllRules.pas
+            ├─ ASTHelpers.pas … node-traversal helpers shared by several rules (field-child lookup, uses/declaration-name collection)
+            └─ FPCSymbols.pas … loader for data/fpc-rtl-symbols.txt (used by RAWPACO-DEPR-002 / RAWPACO-HALLUC-001)
+
+TSBindings.pas … cdecl external declarations for the tree-sitter C API, plus the {$L} links to the
+                 objects built from vendor/. Used by everything above that touches a TSNode.
 ```
 
-Currently, `src/rawpaco.lpr` is just a bootstrap self-check program that confirms tree-sitter-pascal works; the structure above does not exist yet. The plan is to split out `LintDriver`/`ASTWalker`/`RuleRegistry`/`Diagnostics` when the first rule is implemented. (Owner: Sonnet5)
+This structure is implemented. Two notes on it:
+
+- `ASTWalker.pas` uses plain recursion over `ts_node_named_child`, **not** the cursor API mentioned in section 1.2 — the cursor API was described there as an optimization to adopt only when it is actually needed, and so far it has not been.
+- `Rules/AllRules.pas` exists because FPC has no runtime assembly scanning: a rule unit's `initialization` section (its `RegisterRule` call) only runs if that unit is actually reached through a `uses` clause. Adding a rule therefore requires adding it to `AllRules.pas` as well; forgetting to do so leaves the rule silently inert.
 
 ### 1.2 TSBindings.pas needs to be extended
 
