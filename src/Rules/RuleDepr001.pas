@@ -69,6 +69,9 @@ type
 
 implementation
 
+uses
+  ASTHelpers;
+
 type
   TDeprecatedNameList = specialize TList<string>; // 大文字化済みの名前を保持
 
@@ -97,35 +100,22 @@ end;
 // 1パス目: declProcを探し、deprecated属性付きのものの名前(大文字化)を集める。
 procedure CollectDeprecatedNames(const Node: TSNode; Ctx: TLintContext; Names: TDeprecatedNameList);
 var
-  ChildCount, I, NamedCount, J: LongWord;
+  NamedCount, J: LongWord;
   NameNode, AttrNode: TSNode;
   HasName, IsDeprecated: Boolean;
 begin
   if ts_node_type(Node) = 'declProc' then
   begin
-    HasName := False;
-    NameNode := Node; // ダミー初期値
+    HasName := FindFieldChild(Node, 'name', NameNode);
     IsDeprecated := False;
 
-    ChildCount := ts_node_child_count(Node);
-    I := 0;
-    while I < ChildCount do
-    begin
-      if (not HasName) and (ts_node_field_name_for_child(Node, I) = 'name') then
-      begin
-        NameNode := ts_node_child(Node, I);
-        HasName := True;
-      end
-      else if ts_node_field_name_for_child(Node, I) = 'attribute' then
-      begin
-        AttrNode := ts_node_child(Node, I);
-        // procExternal(cdecl; external;等)はdeprecatedと無関係なので
-        // procAttribute型の場合のみ中身を見る。
-        if (ts_node_type(AttrNode) = 'procAttribute') and HasDeprecatedAttribute(AttrNode) then
-          IsDeprecated := True;
-      end;
-      Inc(I);
-    end;
+    // attributeは同じフィールド名で複数回現れうる(cdecl; deprecated; のように
+    // 複数の指令が並ぶ)ため全件を見る。
+    for AttrNode in CollectFieldChildren(Node, 'attribute') do
+      // procExternal(cdecl; external;等)はdeprecatedと無関係なので
+      // procAttribute型の場合のみ中身を見る。
+      if (ts_node_type(AttrNode) = 'procAttribute') and HasDeprecatedAttribute(AttrNode) then
+        IsDeprecated := True;
 
     // nameが単純なidentifier(ジェネリック名・演算子名ではない)の場合のみ
     // 対象とする。呼び出し側での照合が単純な識別子比較で完結するため。
@@ -149,7 +139,7 @@ end;
 procedure FindUsages(const Node: TSNode; Ctx: TLintContext; Names: TDeprecatedNameList);
 var
   NodeType: PAnsiChar;
-  ChildCount, I, NamedCount, J: LongWord;
+  NamedCount, J: LongWord;
   EntityNode, OnlyChild: TSNode;
   HasEntity: Boolean;
 begin
@@ -157,20 +147,7 @@ begin
 
   if NodeType = 'exprCall' then
   begin
-    HasEntity := False;
-    EntityNode := Node; // ダミー初期値
-    ChildCount := ts_node_child_count(Node);
-    I := 0;
-    while I < ChildCount do
-    begin
-      if ts_node_field_name_for_child(Node, I) = 'entity' then
-      begin
-        EntityNode := ts_node_child(Node, I);
-        HasEntity := True;
-        Break;
-      end;
-      Inc(I);
-    end;
+    HasEntity := FindFieldChild(Node, 'entity', EntityNode);
     if HasEntity and (ts_node_type(EntityNode) = 'identifier') and
        (Names.IndexOf(UpperCase(Ctx.GetNodeText(EntityNode))) >= 0) then
       Ctx.Report(CRuleId, CSeverity,

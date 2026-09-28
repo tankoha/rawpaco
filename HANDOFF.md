@@ -147,6 +147,69 @@
 - `text`/`github`/`json`いずれの形式でも重要度は`--fail-on`の値に関わらず常に表示する(`text`は`error:`/`warning:`、`github`は`::error`/`::warning`、`json`の`"severity"`フィールドが実値を反映)。
 - 既定挙動の変更(診断1件で即終了コード1 → Error階層のみ)は意図的な破壊的変更。`0.0.1-dev`で外部利用者がまだいないタイミングだからこそ許容されるという判断(設計書4.1.7節)。
 
+## 共有ヘルパユニット `src/ASTHelpers.pas` について
+
+- 目的: 複数のルールユニットが同じ形で必要とする、tree-sitter ノード走査の小さな操作を1箇所に集約する。ルール9本を実装した時点で `FindFieldChild` が RuleHalluc001 / RuleStyle001 に**一字一句同じ形で2つ**存在し、同じ while ループが他7ユニットにインラインで散っていた（`ts_node_field_name_for_child` の出現が計30箇所）。`CollectUsedUnits` と `CollectDeclaredNames` も RuleDepr002 / RuleHalluc001 で完全に同じ実装が2つあった。
+- 公開しているもの: `TSNodeArray` / `TNameSet` / `TUnitList`、`FindFieldChild`、`CollectFieldChildren`、`CollectUsedUnits`、`CollectDeclaredNames`、`FindUnitByName`。
+- `FindFieldChild`（最初の1件）と `CollectFieldChildren`（全件）を分けている理由: tree-sitter-pascal には同じフィールド名が複数回現れるフィールド（node-types.json の multiple）があり、`try` の `except`/`finally` と `declProc` の `attribute`、`declVar`/`declField` の `name` がそれに当たる。最初の1件だけを見ると取りこぼす。
+- **ここに置かないと決めたものの境界**（将来追加する際の指針。ユニット冒頭コメントにも記載）:
+  - `IsCreateCall`（RuleDefense002）のように「`.Create` という名前をコンストラクタとみなす」等のヒューリスティックを含むものは、その近似の責任をどのルールが負うのかが曖昧になるため各ルールに残す。
+  - 1ユニットしか使っていない補助関数（`HasChildOfType` 等）は、重複が無い段階で移すと利点がないため残す。2つ目の利用者が現れた時点で移す。
+  - 「全子ノードをフィールド名付きで辿る」形（RuleDepr002/RuleHalluc001 の `Walk`、RuleStyle002 の `Scan`）は特定フィールドの検索ではなく走査そのものなので畳まない。
+- 挙動不変の検証方法（この種のリファクタを今後行う場合も同じ手順を推奨）: `git worktree add` で HEAD の旧バイナリを別途ビルドし、同一コーパスに対して `--fail-on=warning` で text/github/json の3形式すべてを実行して出力を diff する。`make test`(92ケース)・`make selflint` も併せて通すこと。
+  - 小コーパス（130ファイル = `tests/` のフィクスチャ + 自身のソース + `../papimela` の実コード、診断43件）: **3形式すべて差分ゼロ・終了コードも一致**。
+  - **fpc-source 全体（4894ファイル、診断25759件）: 旧新の JSON 出力がバイト単位で完全一致（6,626,973バイト）、stderr も一致**（2026-09-29 実測。`fpc-source 3.2.2+dfsg-49` を導入して実施）。実行は `xargs -n 200` で分割（4894ファイルを一度に渡すと ARG_MAX を超えうる）。`xargs` の終了コード123は「いずれかの実行が非ゼロ終了」を示すもので、rawpaco が診断ありで rc=1 を返すため旧新とも同じ値になる。
+  - **厳密には「完全な挙動不変」ではない（Fable5.1のレビューで判明、2026-09-29）**: `specialize SysUtils.Foo` のようにテンプレート引数を伴わない `specialize` を `X.Y` に付けた形では、RAWPACO-DEPR-002 が報告しなくなった。原因は `FindFieldChild` が同名フィールドの**最初**の1件を返すのに対し、旧コードのループは**最後**を採っていたこと。`exprDot.lhs` が multiple=true なのは grammar.js の `_ref` が `seq($.kSpecialize, $.identifier)` を持つためで、この形では `[lhs] kSpecialize` → `[lhs] identifier` の順に2件並ぶ（プローブで実測）。ただし (1) これはFPCとして**無効な構文**（`specialize` はテンプレート引数が必須）、(2) 変化の方向は「報告しない」＝CLAUDE.mdルール5の安全側、(3) fpc-source 全4894ファイルに該当形は0件（`grep -rE '\bspecialize\s+\w+\s*\.'`）、(4) 正当な `specialize TFPGList<Integer>.Create` では2件並びが `exprTpl` の内側に閉じるため `exprDot.lhs` は1件のまま。以上より受け入れた。詳細は `src/ASTHelpers.pas` の `FindFieldChild` のコメント参照。
+  - **差分検証時の落とし穴（Fable5.1が実際に空振りした）**: 旧バイナリをリポジトリ外（scratchpad等）にコピーして**リポジトリ外のcwdで実行すると `data/fpc-rtl-symbols.txt` が見つからず、RAWPACO-DEPR-002 と RAWPACO-HALLUC-001 が黙って無効化される**（探索順は `FPCSymbols.FindDataFile`: 環境変数 → exe と同階層の `data/` → exe の `../data/` → cwd の `data/`）。両バイナリが同じように無効化されるので diff は一致してしまい、2ルール分を検証できていないことに気づけない。**`RAWPACO_DATA_DIR` を明示するか、リポジトリルートを cwd にして実行すること**（今回の検証は後者で、診断43件中に DEPR-002 8件・HALLUC-001 6件が含まれていることを確認済み）。
+  - 関連する改善案（未実施）: `FPCSymbolsAvailable` が False のとき stderr に一言出す。現状は2ルールが静かに無効化されるだけで、`rawpaco.json` の未知キーを黙って無視しないという方針（CLAUDE.mdルール5）と整合していない。挙動変更になるので別途判断。
+  - このときのルール別内訳は **STYLE-001=25254 / SEC-001=255 / DEPR-001=85 / DEFENSE-001=68 / SEC-002=60 / DEPR-002=33 / DEFENSE-002=4 / HALLUC-001=0 / STYLE-002=0**。STYLE-001 の25254件と DEPR-002 の33件、HALLUC-001・STYLE-002 のゼロ件は、いずれも本ファイルに記録されている過去セッションの実測値と完全に一致しており、コーパスと判定の両方が当時から変わっていないことの裏付けになる（今後リグレッションの基準値として使える）。
+- `Makefile` の `RULE_SOURCES` に追記済み（依存として列挙されていないとソース変更時に再ビルドされない）。ルールユニットではないため `src/Rules/AllRules.pas` の `uses` には追加しない。
+
+## 追加検討中のルール（2026-09-28 に実機検証。未実装）
+
+プロジェクトオーナーからの提案3件を、AST プローブと fpc 3.2.2 実コンパイルで検証した結果。**いずれも未実装で、ID 体系・設計書への節追加は未決**。
+
+### ① メモリ管理（ローカル変数に `Create` したのに `try..finally ... Free` がない）
+
+- AST は好都合: ルーチンは `defProc`（フィールド `header`=declProc / `local`=declVars / `body`=block）。`defProc` を `InterestedNodeTypes` にすれば1ルーチン1回 Check になり、DEPR-001 で確立した「インスタンスに状態を持たせない」設計がそのまま使える。
+- 2段に分けるのが妥当: **MEM-001**=ルーチン内に `Free`/`Destroy`/`FreeAndNil` が一度も無い（確度高・Error）、**MEM-002**=`Free` はあるが `finally` 配下にない（確度中・Warning）。
+- 誤検知回避の絞り込み: ローカル変数のみ／宣言型が `I` 始まり（インターフェース＝参照カウント。手で Free してはいけない）や `P` 始まりは除外／その変数が引数として渡される・`Result :=` される・フィールドに代入される・`with` に渡される場合は所有権移転の可能性があるので黙る／生成がちょうど1回の場合に限定。
+- **実測した落とし穴**: ネストした手続きは外側の `[local]` フィールドに `defProc` として入る。生成の収集はネスト `defProc` に降りてはいけない（内側の生成が外側に帰属してしまう）が、`Free` の探索はネストにも降りるべき（内側で解放するパターンの誤検知回避）という非対称な走査が必要。
+- `with TStringList.Create do try...finally Free; end` はローカル変数が無いため自然に対象外（対応不要）。
+- `RuleDefense002` の `IsCreateCall`（`<X>.Create` の括弧有無を両方判定）が流用できる。ただし ASTHelpers には意図的に置いていない（上記「共有ヘルパユニット」節の境界方針）。
+
+### ② 方言の混在 → 「モード宣言の衛生」として設計すべき
+
+- `{$mode objfpc}` 等のコンパイラディレクティブは **`pp` ノード**として構文木に載る（unit 直下・implementation 直下・`block` 内、どの位置でも。`{$ifdef FOO}` も同じ `pp`）。走査は容易。
+- **「モードに合わない構文」は fpc 自身が弾くので価値が薄い**（実測）: objfpc + procvar の `@` 省略 → `Error: Incompatible types: got "untyped"`／objfpc + Delphi 風ジェネリクス `TList<Integer>` → `Error: Generics without specialization...`／delphi mode + `specialize` → `Error: Identifier not found "specialize"`。設計書2.3の「CI の make が捕まえるものは優先度が低い」がそのまま当てはまる。
+- **本当に危ないのはコンパイラが黙るケース（実測）**: `Length(StringOfChar('x',300))` の結果は `{$mode objfpc}`→**255**、`{$mode delphi}`→300、`{$mode fpc}`→255、mode 指定なし→255。つまり **`{$mode objfpc}` は `{$H+}` を含意せず、`string` は shortstring のまま黙って255文字に切られる**（警告・ヒント一切なし）。Lazarus が必ず `{$mode objfpc}{$H+}` を対で吐く理由。AI 生成コードで `{$H+}` だけ落ちるのは実際によくある。→ **②で最も実害が大きい検知対象**。
+  - ※この環境の `/etc/fpc.cfg` は `-Sgic` のみで `-Sh`/`-M` を設定していないことを確認済み。実装前に freepascal.org の `$H` の項で裏を取ること（CLAUDE.mdルール1）。
+- **混在の実測**: 2つ目の `{$mode}` は `Warning: Misplaced global compiler switch, ignored` が出て無視されるが、**`{$H-}` の混在は無警告で効く**（`{$H+}` 下で宣言した変数は300、`{$H-}` 後は255）。unit で同じことをすると `Error: Forward declaration not solved "F:AnsiString;"` という原因から遠いエラーになる → rawpaco が根本原因を直接指せる価値はここ。
+- 検知案: **MODE-001**=同一ファイルに異なる `{$mode}` が2つ以上／**MODE-002**=`{$mode objfpc}` があるのに `{$H+}` が無い（Warning）／**MODE-003**=`{$H+}`/`{$H-}` の混在／**MODE-004**=`{$mode}` が一切無い unit/program（`.inc` 断片やプロジェクト全体で `-M` を渡す運用があるので `rawpaco.json` で切れるようにする）。
+- 注意: `{$ifdef}` 配下の `{$mode}` は条件付きなので素朴に数えると誤検知する。`{$ifdef}` 配下は見逃す方針（CLAUDE.mdルール5）を推奨。
+
+### ③ vendoring した依存への `tools/` 再生成スクリプト適用（mORMot2 / Horse）
+
+- **パイプラインは第三者ライブラリにそのまま使える**（実測）: 合成した `Horse.Core.pas`（delphi mode、クラス/レコード/インターフェース/`overload` 入り）を fpc でコンパイル → `ppudump -VSD` → 既存の `tools/ppudump_symbols.awk` に通すと `G TRec`/`G THorseCore`/`G IHorseCallback`/`G GetHorse`/`G GlobalHorse` と `M`（クラスメンバ）が正しく出た。
+- **塞ぐべき穴が2つある。どちらも dotted（名前空間付き）unit 名が直撃する**:
+  1. `tools/ppudump_symbols.awk`: ppudump は dotted unit に対して `Unit symbol Horse.Core` と **`NameSpace symbol Horse`** の両方を出す。前者は除外されているが後者が漏れており、**存在しないシンボル `G Horse` が混入する**（実測）。数行の修正。
+  2. `src/Rules/RuleHalluc001.pas` の `CheckQualified` に `if ts_node_type(LhsNode) <> 'identifier' then Exit;` があるため、`mormot.core.text.FormatUTF8(...)` のような修飾が**丸ごとスキップ**される。AST は左結合の `exprDot` の入れ子になり `GetNodeText(lhs)` = `"mormot.core.text"` が取れるので修正は小さいが、`Horse.Core.GetHorse.Listen(...)` のように unit 名の後にさらにメンバが続く形があるため「既知 unit 名の最長一致でどこまでが unit 名かを決める」ロジックが必要。
+  - `uses` 側（`moduleName` ノード）は dotted でも `GetNodeText` で `"mormot.core.base"` が取れており修正不要（`moduleName` 配下は `identifier` + `kDot` + `identifier`...）。
+- **③の最大の効果は判定B**: 現行の判定Bは「uses が全て既知ユニット」が前提なので、`uses mormot.core.base` があるだけで丸ごと無効化される。つまり今 mORMot2/Horse を使うファイルでは HALLUC-001 は判定A・Bとも実質何も報告していない。data/ に載せると自動的に効き出す。
+- 運用: **strict/loose の2段運用を推奨**。抽出が不完全なまま `strict` にすると「実在する API を実在しないと言う」最悪の誤検知になる。初期は `loose`（既知の名前集合に寄与＝判定Bの門番を通す効果のみ）で入れ、誤検知ゼロを実測してから `strict` に上げる。
+- サイズ: 現行 `data/fpc-rtl-symbols.txt` は 28,007行/380KB（68ユニット・G 5,511・M 22,417）。mORMot2 はユニット数が桁違いなので、依存ごとに別ファイル（`data/vendor-<name>-symbols.txt`）に分けて `FPCSymbols` 側でマージ読みする形が素直。
+- ライセンス: vendoring するなら Horse（MIT）/ mORMot2（MPL-GPL-LGPL トライライセンス）の LICENSE 同梱（`vendor/*/LICENSE` の前例あり）。
+
+### 検証に使ったプローブ
+
+AST ダンププログラム（`ts_node_string` ではなくフィールド名付きのインデント出力）を `src/probe.lpr` として一時的に作って検証し、削除済み。`TSBindings.pas` の `{$L ../build/*.o}` が相対パスなので、再作成する場合も `src/` 直下に置く必要がある。
+
+## 次セッションの予定アクション（2026-09-28 時点）
+
+1. ~~`fpc-source` を導入する~~ → **完了**（2026-09-29、`fpc-source 3.2.2+dfsg-49`。`/usr/share/fpcsrc/3.2.2` に .pas/.pp が4894ファイル）。ASTHelpers 切り出しの全体差分検証もこれで実施済み（上記「共有ヘルパユニット」節）。
+2. **`src/ASTHelpers.pas` 切り出しの Fable5.1 レビュー** → 依頼済み（2026-09-29）。対象は未コミットの working tree。指摘の反映後にコミットする。
+3. そのうえで、検討済みの追加ルール（②のモード宣言衛生 → ①のメモリ管理 → ③の dotted unit 対応）に着手する。検証済みの根拠は上記「追加検討中のルール」節を参照。
+
 ## 直近セッションのメモ
 
 - FPC開発環境をローカルに導入済み（Ubuntu 24.04、apt経由: fpc 3.2.2+dfsg-32, fpc-source, lazarus 3.0）。

@@ -81,6 +81,9 @@ type
 
 implementation
 
+uses
+  ASTHelpers;
+
 const
   CRuleId = 'RAWPACO-SEC-002';
   // 設計書4.1.2節: ソースにコミットされた資格情報。セキュリティカテゴリの
@@ -133,23 +136,9 @@ end;
 // (メソッド呼び出しの一部等、通常はここに来る前にexprCall/exprDotの組み
 // 合わせが変わるため稀)の場合はFalseを返し、呼び出し側で対象外とする。
 function TryGetDotRhsIdentifier(const DotNode: TSNode; out RhsNode: TSNode): Boolean;
-var
-  ChildCount, I: LongWord;
 begin
-  Result := False;
-  RhsNode := DotNode; // ダミー初期値
-  ChildCount := ts_node_child_count(DotNode);
-  I := 0;
-  while I < ChildCount do
-  begin
-    if ts_node_field_name_for_child(DotNode, I) = 'rhs' then
-    begin
-      RhsNode := ts_node_child(DotNode, I);
-      Result := ts_node_type(RhsNode) = 'identifier';
-      Exit;
-    end;
-    Inc(I);
-  end;
+  Result := FindFieldChild(DotNode, 'rhs', RhsNode) and
+    (ts_node_type(RhsNode) = 'identifier');
 end;
 
 function ValueLooksLikePlaceholder(const Value: string): Boolean;
@@ -196,32 +185,12 @@ end;
 
 procedure TRuleSec002.CheckAssignment(const Node: TSNode; Ctx: TLintContext);
 var
-  ChildCount, I: LongWord;
   LhsNode, RhsNode, KeywordNode: TSNode;
   HasLhs, HasRhs, HasKeywordNode: Boolean;
   LhsType: PAnsiChar;
 begin
-  HasLhs := False;
-  HasRhs := False;
-  LhsNode := Node; // ダミー初期値
-  RhsNode := Node;
-
-  ChildCount := ts_node_child_count(Node);
-  I := 0;
-  while I < ChildCount do
-  begin
-    if ts_node_field_name_for_child(Node, I) = 'lhs' then
-    begin
-      LhsNode := ts_node_child(Node, I);
-      HasLhs := True;
-    end
-    else if ts_node_field_name_for_child(Node, I) = 'rhs' then
-    begin
-      RhsNode := ts_node_child(Node, I);
-      HasRhs := True;
-    end;
-    Inc(I);
-  end;
+  HasLhs := FindFieldChild(Node, 'lhs', LhsNode);
+  HasRhs := FindFieldChild(Node, 'rhs', RhsNode);
 
   if not (HasLhs and HasRhs) then
     Exit;
@@ -254,35 +223,25 @@ end;
 
 procedure TRuleSec002.CheckDecl(const Node: TSNode; Ctx: TLintContext);
 var
-  ChildCount, I, DVChildCount, J: LongWord;
-  NameNode, DefaultValueNode, ValueNode: TSNode;
+  DVChildCount, J: LongWord;
+  NameNode, DefaultValueNode, ValueNode, NameChild: TSNode;
   HasName, HasDefaultValue, FoundValue: Boolean;
 begin
   HasName := False;
-  HasDefaultValue := False;
   NameNode := Node; // ダミー初期値
-  DefaultValueNode := Node;
 
-  ChildCount := ts_node_child_count(Node);
-  I := 0;
-  while I < ChildCount do
-  begin
-    // nameフィールドは複数識別子の場合","トークンも同じフィールド名で
-    // 並ぶ(node-types.json)。最初に見つかったidentifier型だけを見る
-    // 簡略化(ユニット冒頭コメント参照)。
-    if (not HasName) and (ts_node_field_name_for_child(Node, I) = 'name') and
-       (ts_node_type(ts_node_child(Node, I)) = 'identifier') then
+  // nameフィールドは複数識別子の場合","トークンも同じフィールド名で
+  // 並ぶ(node-types.json)。最初に見つかったidentifier型だけを見る
+  // 簡略化(ユニット冒頭コメント参照)。
+  for NameChild in CollectFieldChildren(Node, 'name') do
+    if ts_node_type(NameChild) = 'identifier' then
     begin
-      NameNode := ts_node_child(Node, I);
+      NameNode := NameChild;
       HasName := True;
-    end
-    else if ts_node_field_name_for_child(Node, I) = 'defaultValue' then
-    begin
-      DefaultValueNode := ts_node_child(Node, I);
-      HasDefaultValue := True;
+      Break;
     end;
-    Inc(I);
-  end;
+
+  HasDefaultValue := FindFieldChild(Node, 'defaultValue', DefaultValueNode);
 
   if not (HasName and HasDefaultValue) then
     Exit; // 初期値なしのvar宣言は対象外

@@ -129,6 +129,9 @@ type
 
 implementation
 
+uses
+  ASTHelpers;
+
 const
   CRuleId = 'RAWPACO-STYLE-002';
   // 設計書4.1.2節: 設計書2.1節・P9エントリで明記済みの通り、同一ファイル内
@@ -260,24 +263,18 @@ end;
 // CLAUDE.mdルール5(疑わしきは見逃す)に従い広めに抑制する。
 function TryHasHandlingExcept(const Node: TSNode): Boolean;
 var
-  ChildCount, I: LongWord;
   ExceptChild: TSNode;
   Found: Boolean;
 begin
   Result := False;
   Found := False;
-  ChildCount := ts_node_child_count(Node);
-  I := 0;
-  while I < ChildCount do
+  // `except`は同じフィールド名で複数の子を持つ(kExceptトークン + 中身)ため
+  // 全件を見る。
+  for ExceptChild in CollectFieldChildren(Node, 'except') do
   begin
-    if ts_node_field_name_for_child(Node, I) = 'except' then
-    begin
-      ExceptChild := ts_node_child(Node, I);
-      if SubtreeHasRaise(ExceptChild) then
-        Exit(False);
-      Found := True;
-    end;
-    Inc(I);
+    if SubtreeHasRaise(ExceptChild) then
+      Exit(False);
+    Found := True;
   end;
   Result := Found;
 end;
@@ -308,32 +305,12 @@ end;
 function TryGetWatchedCall(const CallNode: TSNode; Ctx: TLintContext;
   SysUtilsUsed: Boolean; out EntityNode: TSNode; out NameUpper: string): Boolean;
 var
-  ChildCount, I: LongWord;
   ArgsNode: TSNode;
   HasEntity, HasArgs: Boolean;
 begin
   Result := False;
-  HasEntity := False;
-  HasArgs := False;
-  EntityNode := CallNode; // ダミー初期値
-  ArgsNode := CallNode;
-
-  ChildCount := ts_node_child_count(CallNode);
-  I := 0;
-  while I < ChildCount do
-  begin
-    if ts_node_field_name_for_child(CallNode, I) = 'entity' then
-    begin
-      EntityNode := ts_node_child(CallNode, I);
-      HasEntity := True;
-    end
-    else if ts_node_field_name_for_child(CallNode, I) = 'args' then
-    begin
-      ArgsNode := ts_node_child(CallNode, I);
-      HasArgs := True;
-    end;
-    Inc(I);
-  end;
+  HasEntity := FindFieldChild(CallNode, 'entity', EntityNode);
+  HasArgs := FindFieldChild(CallNode, 'args', ArgsNode);
 
   // 修飾付き呼び出し(entityがexprDot)は対象外(冒頭コメント(c))。
   if not (HasEntity and (ts_node_type(EntityNode) = 'identifier')) then

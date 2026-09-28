@@ -57,7 +57,7 @@ type
 implementation
 
 uses
-  FPCSymbols;
+  FPCSymbols, ASTHelpers;
 
 const
   CRuleId = 'RAWPACO-DEPR-002';
@@ -65,87 +65,6 @@ const
   // 今すぐ壊れているわけではない前向きな移行シグナルなので、既定では
   // CIを落とさないWarning階層。
   CSeverity = svWarning;
-
-type
-  TNameSet = specialize TDictionary<string, Boolean>;
-  TUnitList = specialize TList<string>;
-
-// ファイル内の全ての宣言名（大文字化）を集める。制約2のシャドウイング対策。
-// ジェネリック型 `generic TFoo<T> = class` の名前は `genericTpl` ノードになり
-// identifier ではないため、`genericTpl` 配下の identifier はまとめて拾う。
-procedure CollectDeclaredNames(const Node: TSNode; Ctx: TLintContext; Names: TNameSet);
-var
-  ChildCount, I, NamedCount, J: LongWord;
-  Child: TSNode;
-  FieldName: PAnsiChar;
-  Key: string;
-  InGenericTpl: Boolean;
-begin
-  InGenericTpl := (ts_node_type(Node) = 'genericTpl') or (ts_node_type(Node) = 'genericArg');
-  ChildCount := ts_node_child_count(Node);
-  I := 0;
-  while I < ChildCount do
-  begin
-    FieldName := ts_node_field_name_for_child(Node, I);
-    if InGenericTpl or ((FieldName <> nil) and (FieldName = 'name')) then
-    begin
-      Child := ts_node_child(Node, I);
-      if ts_node_type(Child) = 'identifier' then
-      begin
-        Key := UpperCase(Ctx.GetNodeText(Child));
-        Names.AddOrSetValue(Key, True);
-      end;
-    end;
-    Inc(I);
-  end;
-
-  NamedCount := ts_node_named_child_count(Node);
-  J := 0;
-  while J < NamedCount do
-  begin
-    CollectDeclaredNames(ts_node_named_child(Node, J), Ctx, Names);
-    Inc(J);
-  end;
-end;
-
-// uses 節に現れるユニット名を集める（元の綴りのまま。メッセージに使う）。
-procedure CollectUsedUnits(const Node: TSNode; Ctx: TLintContext; Units: TUnitList);
-var
-  NamedCount, J: LongWord;
-  Child: TSNode;
-begin
-  if ts_node_type(Node) = 'declUses' then
-  begin
-    NamedCount := ts_node_named_child_count(Node);
-    J := 0;
-    while J < NamedCount do
-    begin
-      Child := ts_node_named_child(Node, J);
-      if ts_node_type(Child) = 'moduleName' then
-        Units.Add(Ctx.GetNodeText(Child));
-      Inc(J);
-    end;
-    Exit;
-  end;
-
-  NamedCount := ts_node_named_child_count(Node);
-  J := 0;
-  while J < NamedCount do
-  begin
-    CollectUsedUnits(ts_node_named_child(Node, J), Ctx, Units);
-    Inc(J);
-  end;
-end;
-
-function FindUnitByName(Units: TUnitList; const Name: string): string;
-var
-  U: string;
-begin
-  Result := '';
-  for U in Units do
-    if CompareText(U, Name) = 0 then
-      Exit(U);
-end;
 
 type
   TDepr002Scan = class
@@ -206,29 +125,13 @@ end;
 
 procedure TDepr002Scan.CheckDotted(const Node: TSNode);
 var
-  ChildCount, I: LongWord;
-  FieldName: PAnsiChar;
   LhsNode, RhsNode: TSNode;
   HasLhs, HasRhs: Boolean;
   QualifierUnit, Name: string;
   Info: TFPCSymbolInfo;
 begin
-  HasLhs := False;
-  HasRhs := False;
-  LhsNode := Node;
-  RhsNode := Node;
-  ChildCount := ts_node_child_count(Node);
-  I := 0;
-  while I < ChildCount do
-  begin
-    FieldName := ts_node_field_name_for_child(Node, I);
-    if FieldName <> nil then
-    begin
-      if FieldName = 'lhs' then begin LhsNode := ts_node_child(Node, I); HasLhs := True; end
-      else if FieldName = 'rhs' then begin RhsNode := ts_node_child(Node, I); HasRhs := True; end;
-    end;
-    Inc(I);
-  end;
+  HasLhs := FindFieldChild(Node, 'lhs', LhsNode);
+  HasRhs := FindFieldChild(Node, 'rhs', RhsNode);
 
   if not (HasLhs and HasRhs) then Exit;
   if ts_node_type(LhsNode) <> 'identifier' then Exit;
@@ -250,6 +153,7 @@ var
   NodeType: PAnsiChar;
   ChildCount, I: LongWord;
   ChildField: PAnsiChar;
+  Child: TSNode;
   Name, AUnitName, Hint: string;
 begin
   NodeType := ts_node_type(Node);
@@ -269,15 +173,8 @@ begin
   // entity 側（with に渡す式そのもの）は通常の式なので走査を続ける。
   if NodeType = 'with' then
   begin
-    ChildCount := ts_node_child_count(Node);
-    I := 0;
-    while I < ChildCount do
-    begin
-      ChildField := ts_node_field_name_for_child(Node, I);
-      if (ChildField <> nil) and (ChildField = 'entity') then
-        Walk(ts_node_child(Node, I), 'entity');
-      Inc(I);
-    end;
+    for Child in CollectFieldChildren(Node, 'entity') do
+      Walk(Child, 'entity');
     Exit;
   end;
 
@@ -286,15 +183,8 @@ begin
     CheckDotted(Node);
     // lhs 側はさらにネストした exprDot / exprCall でありうるので走査を続けるが、
     // rhs は「何かのメンバ名」であり型解決なしには意味を判定できないため見ない。
-    ChildCount := ts_node_child_count(Node);
-    I := 0;
-    while I < ChildCount do
-    begin
-      ChildField := ts_node_field_name_for_child(Node, I);
-      if (ChildField <> nil) and (ChildField = 'lhs') then
-        Walk(ts_node_child(Node, I), 'lhs');
-      Inc(I);
-    end;
+    for Child in CollectFieldChildren(Node, 'lhs') do
+      Walk(Child, 'lhs');
     Exit;
   end;
 
@@ -367,7 +257,7 @@ begin
     // 既知ユニットが1つも無くても走査はする。System は uses に書かなくても
     // 常に見えるため（FindDeprecated が System を暗黙に見る）。
 
-    CollectDeclaredNames(Node, Ctx, Declared);
+    CollectDeclaredNames(Node, Ctx, Declared); // 制約2（シャドウイング対策）用
 
     Scan.FCtx := Ctx;
     Scan.FUnits := KnownUnits;

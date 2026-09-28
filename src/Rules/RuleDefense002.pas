@@ -52,6 +52,9 @@ type
 
 implementation
 
+uses
+  ASTHelpers;
+
 const
   CRuleId = 'RAWPACO-DEFENSE-002';
   // 設計書4.1.2節: DEFENSE-001と異なり失敗を握りつぶしてはいない。単に
@@ -63,9 +66,8 @@ const
 // になる。ユニット冒頭コメント参照)。
 function IsCreateCall(const RhsNode: TSNode; Ctx: TLintContext): Boolean;
 var
-  ChildCount, I: LongWord;
   EntityNode, DotNode, DotRhsNode: TSNode;
-  HasEntity, HasDotRhs: Boolean;
+  HasDotRhs: Boolean;
   NodeType: PAnsiChar;
 begin
   Result := False;
@@ -75,41 +77,15 @@ begin
     DotNode := RhsNode
   else if NodeType = 'exprCall' then
   begin
-    HasEntity := False;
-    EntityNode := RhsNode; // ダミー初期値
-    ChildCount := ts_node_child_count(RhsNode);
-    I := 0;
-    while I < ChildCount do
-    begin
-      if ts_node_field_name_for_child(RhsNode, I) = 'entity' then
-      begin
-        EntityNode := ts_node_child(RhsNode, I);
-        HasEntity := True;
-        Break;
-      end;
-      Inc(I);
-    end;
-    if not (HasEntity and (ts_node_type(EntityNode) = 'exprDot')) then
+    if not (FindFieldChild(RhsNode, 'entity', EntityNode) and
+            (ts_node_type(EntityNode) = 'exprDot')) then
       Exit; // Foo()のような単純呼び出しはexprDotを経由しないため対象外
     DotNode := EntityNode;
   end
   else
     Exit; // 単純呼び出しでも.呼び出しでもない(定数・別の式等)は対象外
 
-  HasDotRhs := False;
-  DotRhsNode := DotNode; // ダミー初期値
-  ChildCount := ts_node_child_count(DotNode);
-  I := 0;
-  while I < ChildCount do
-  begin
-    if ts_node_field_name_for_child(DotNode, I) = 'rhs' then
-    begin
-      DotRhsNode := ts_node_child(DotNode, I);
-      HasDotRhs := True;
-      Break;
-    end;
-    Inc(I);
-  end;
+  HasDotRhs := FindFieldChild(DotNode, 'rhs', DotRhsNode);
 
   Result := HasDotRhs and (ts_node_type(DotRhsNode) = 'identifier') and
     (UpperCase(Ctx.GetNodeText(DotRhsNode)) = 'CREATE');
@@ -120,34 +96,12 @@ end;
 function TryGetCreateAssignmentTarget(const AssignNode: TSNode; Ctx: TLintContext;
   out TargetNameUpper: string): Boolean;
 var
-  ChildCount, I: LongWord;
   LhsNode, RhsNode: TSNode;
-  HasLhs, HasRhs: Boolean;
 begin
   Result := False;
-  HasLhs := False;
-  HasRhs := False;
-  LhsNode := AssignNode; // ダミー初期値
-  RhsNode := AssignNode;
 
-  ChildCount := ts_node_child_count(AssignNode);
-  I := 0;
-  while I < ChildCount do
-  begin
-    if ts_node_field_name_for_child(AssignNode, I) = 'lhs' then
-    begin
-      LhsNode := ts_node_child(AssignNode, I);
-      HasLhs := True;
-    end
-    else if ts_node_field_name_for_child(AssignNode, I) = 'rhs' then
-    begin
-      RhsNode := ts_node_child(AssignNode, I);
-      HasRhs := True;
-    end;
-    Inc(I);
-  end;
-
-  if not (HasLhs and HasRhs) then
+  if not (FindFieldChild(AssignNode, 'lhs', LhsNode) and
+          FindFieldChild(AssignNode, 'rhs', RhsNode)) then
     Exit;
   // lhsが単純な識別子の場合のみ対象(exprDot経由のフィールド代入等はP1〜P7
   // でも一貫して対象外としてきたスコープ限定と同じ方針)。
@@ -165,48 +119,16 @@ end;
 function TryGetAssignedCheckTarget(const IfNode: TSNode; Ctx: TLintContext;
   out TargetNameUpper: string): Boolean;
 var
-  ChildCount, I: LongWord;
   ConditionNode, EntityNode, ArgsNode, ArgNode: TSNode;
   HasCondition, HasEntity, HasArgs: Boolean;
 begin
   Result := False;
-  HasCondition := False;
-  ConditionNode := IfNode; // ダミー初期値
-  ChildCount := ts_node_child_count(IfNode);
-  I := 0;
-  while I < ChildCount do
-  begin
-    if ts_node_field_name_for_child(IfNode, I) = 'condition' then
-    begin
-      ConditionNode := ts_node_child(IfNode, I);
-      HasCondition := True;
-      Break;
-    end;
-    Inc(I);
-  end;
+  HasCondition := FindFieldChild(IfNode, 'condition', ConditionNode);
   if not (HasCondition and (ts_node_type(ConditionNode) = 'exprCall')) then
     Exit;
 
-  HasEntity := False;
-  HasArgs := False;
-  EntityNode := ConditionNode; // ダミー初期値
-  ArgsNode := ConditionNode;
-  ChildCount := ts_node_child_count(ConditionNode);
-  I := 0;
-  while I < ChildCount do
-  begin
-    if ts_node_field_name_for_child(ConditionNode, I) = 'entity' then
-    begin
-      EntityNode := ts_node_child(ConditionNode, I);
-      HasEntity := True;
-    end
-    else if ts_node_field_name_for_child(ConditionNode, I) = 'args' then
-    begin
-      ArgsNode := ts_node_child(ConditionNode, I);
-      HasArgs := True;
-    end;
-    Inc(I);
-  end;
+  HasEntity := FindFieldChild(ConditionNode, 'entity', EntityNode);
+  HasArgs := FindFieldChild(ConditionNode, 'args', ArgsNode);
 
   if not (HasEntity and (ts_node_type(EntityNode) = 'identifier') and
           (UpperCase(Ctx.GetNodeText(EntityNode)) = 'ASSIGNED')) then

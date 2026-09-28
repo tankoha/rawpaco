@@ -15,6 +15,7 @@ TS_OBJ := $(BUILD)/tree-sitter.o
 TSP_OBJ := $(BUILD)/tree-sitter-pascal.o
 
 RULE_SOURCES := src/Diagnostics.pas src/RuleRegistry.pas src/ASTWalker.pas \
+                src/ASTHelpers.pas \
                 src/FPCSymbols.pas src/RawpacoConfig.pas src/LintDriver.pas \
                 src/Rules/RuleDefense001.pas \
                 src/Rules/RuleSec001.pas src/Rules/RuleSec002.pas \

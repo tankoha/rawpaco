@@ -42,6 +42,9 @@ type
 
 implementation
 
+uses
+  ASTHelpers;
+
 const
   CRuleId = 'RAWPACO-SEC-001';
   // 設計書4.1.2節: SQLインジェクションの疑いがあるパターン。セキュリティ
@@ -108,40 +111,14 @@ end;
 
 procedure TRuleSec001.Check(const Node: TSNode; Ctx: TLintContext);
 var
-  ChildCount, I: LongWord;
   OperatorNode, LhsNode, RhsNode: TSNode;
   HasOperator, HasLhs, HasRhs, LhsIsLiteral, RhsIsLiteral: Boolean;
 const
   CMessage = 'string concatenation builds SQL from a literal containing a SQL keyword and non-literal input; use parameterized queries instead';
 begin
-  HasOperator := False;
-  HasLhs := False;
-  HasRhs := False;
-  OperatorNode := Node; // ダミー初期値(未使用のまま参照されないことを保証)。
-  LhsNode := Node;
-  RhsNode := Node;
-
-  ChildCount := ts_node_child_count(Node);
-  I := 0;
-  while I < ChildCount do // LongWordなので"0 to Count-1"は使わない(ASTWalker参照)
-  begin
-    if ts_node_field_name_for_child(Node, I) = 'operator' then
-    begin
-      OperatorNode := ts_node_child(Node, I);
-      HasOperator := True;
-    end
-    else if ts_node_field_name_for_child(Node, I) = 'lhs' then
-    begin
-      LhsNode := ts_node_child(Node, I);
-      HasLhs := True;
-    end
-    else if ts_node_field_name_for_child(Node, I) = 'rhs' then
-    begin
-      RhsNode := ts_node_child(Node, I);
-      HasRhs := True;
-    end;
-    Inc(I);
-  end;
+  HasOperator := FindFieldChild(Node, 'operator', OperatorNode);
+  HasLhs := FindFieldChild(Node, 'lhs', LhsNode);
+  HasRhs := FindFieldChild(Node, 'rhs', RhsNode);
 
   if not (HasOperator and HasLhs and HasRhs) then
     Exit; // 文法上は3つとも必須のはずだが、将来の文法変更に備え防御的に(rule 5)

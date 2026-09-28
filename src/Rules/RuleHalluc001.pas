@@ -65,7 +65,7 @@ type
 implementation
 
 uses
-  FPCSymbols;
+  FPCSymbols, ASTHelpers;
 
 const
   CRuleId = 'RAWPACO-HALLUC-001';
@@ -76,9 +76,6 @@ const
   CSeverity = svError;
 
 type
-  TNameSet = specialize TDictionary<string, Boolean>;
-  TUnitList = specialize TList<string>;
-
   THallucScan = class
   private
     FCtx: TLintContext;
@@ -92,90 +89,6 @@ type
   public
     procedure Walk(const Node: TSNode);
   end;
-
-// ファイル内の全ての宣言名を集める（親ノードのフィールド名が `name` の identifier）。
-// ジェネリック型 `generic TFoo<T> = class` の名前は `genericTpl` ノードになり
-// identifier ではないため、`genericTpl` 配下の identifier（型名 T含む型引数）は
-// まとめて拾う。多めに拾っても警告を抑制する方向にしか効かない。
-procedure CollectDeclaredNames(const Node: TSNode; Ctx: TLintContext; Names: TNameSet);
-var
-  ChildCount, I, NamedCount, J: LongWord;
-  Child: TSNode;
-  FieldName: PAnsiChar;
-  InGenericTpl: Boolean;
-begin
-  InGenericTpl := (ts_node_type(Node) = 'genericTpl') or (ts_node_type(Node) = 'genericArg');
-  ChildCount := ts_node_child_count(Node);
-  I := 0;
-  while I < ChildCount do
-  begin
-    FieldName := ts_node_field_name_for_child(Node, I);
-    if InGenericTpl or ((FieldName <> nil) and (FieldName = 'name')) then
-    begin
-      Child := ts_node_child(Node, I);
-      if ts_node_type(Child) = 'identifier' then
-        Names.AddOrSetValue(UpperCase(Ctx.GetNodeText(Child)), True);
-    end;
-    Inc(I);
-  end;
-
-  NamedCount := ts_node_named_child_count(Node);
-  J := 0;
-  while J < NamedCount do
-  begin
-    CollectDeclaredNames(ts_node_named_child(Node, J), Ctx, Names);
-    Inc(J);
-  end;
-end;
-
-procedure CollectUsedUnits(const Node: TSNode; Ctx: TLintContext; Units: TUnitList);
-var
-  NamedCount, J: LongWord;
-  Child: TSNode;
-begin
-  if ts_node_type(Node) = 'declUses' then
-  begin
-    NamedCount := ts_node_named_child_count(Node);
-    J := 0;
-    while J < NamedCount do
-    begin
-      Child := ts_node_named_child(Node, J);
-      if ts_node_type(Child) = 'moduleName' then
-        Units.Add(Ctx.GetNodeText(Child));
-      Inc(J);
-    end;
-    Exit;
-  end;
-
-  NamedCount := ts_node_named_child_count(Node);
-  J := 0;
-  while J < NamedCount do
-  begin
-    CollectUsedUnits(ts_node_named_child(Node, J), Ctx, Units);
-    Inc(J);
-  end;
-end;
-
-function FindFieldChild(const Node: TSNode; const FieldName: string; out Child: TSNode): Boolean;
-var
-  ChildCount, I: LongWord;
-  F: PAnsiChar;
-begin
-  Result := False;
-  Child := Node;
-  ChildCount := ts_node_child_count(Node);
-  I := 0;
-  while I < ChildCount do
-  begin
-    F := ts_node_field_name_for_child(Node, I);
-    if (F <> nil) and (F = FieldName) then
-    begin
-      Child := ts_node_child(Node, I);
-      Exit(True);
-    end;
-    Inc(I);
-  end;
-end;
 
 // 判定Bを無効にすべきコンパイラディレクティブを含むか。
 //   - `{$I foo.inc}` / `{$INCLUDE foo.inc}`: include 先の宣言が構文木に
@@ -242,7 +155,6 @@ procedure THallucScan.CheckQualified(const Node: TSNode);
 var
   LhsNode, RhsNode: TSNode;
   Qualifier, Name: string;
-  U: string;
   Matched: string;
 begin
   if not FindFieldChild(Node, 'lhs', LhsNode) then Exit;
@@ -255,13 +167,7 @@ begin
   // ではないかもしれないので触らない。
   if IsDeclaredHere(Qualifier) then Exit;
 
-  Matched := '';
-  for U in FUnits do
-    if CompareText(U, Qualifier) = 0 then
-    begin
-      Matched := U;
-      Break;
-    end;
+  Matched := FindUnitByName(FUnits, Qualifier);
   if Matched = '' then Exit;
   if not IsStrictFPCUnit(Matched) then Exit;
 
@@ -307,15 +213,8 @@ begin
   if NodeType = 'with' then
   begin
     // 本体の裸の名前は with に渡したレコード/オブジェクトのメンバでありうる。
-    ChildCount := ts_node_child_count(Node);
-    I := 0;
-    while I < ChildCount do
-    begin
-      ChildField := ts_node_field_name_for_child(Node, I);
-      if (ChildField <> nil) and (ChildField = 'entity') then
-        Walk(ts_node_child(Node, I));
-      Inc(I);
-    end;
+    for Child in CollectFieldChildren(Node, 'entity') do
+      Walk(Child);
     Exit;
   end;
 

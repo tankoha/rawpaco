@@ -66,7 +66,7 @@ type
 implementation
 
 uses
-  RawpacoConfig;
+  RawpacoConfig, ASTHelpers;
 
 const
   CRuleId = 'RAWPACO-STYLE-001';
@@ -74,27 +74,6 @@ const
   // 再設定可能)であり、正しさの問題ではない。既定ではCIを落とさない
   // Warning階層。
   CSeverity = svWarning;
-
-function FindFieldChild(const Node: TSNode; const FieldName: string; out Child: TSNode): Boolean;
-var
-  ChildCount, I: LongWord;
-  F: PAnsiChar;
-begin
-  Result := False;
-  Child := Node;
-  ChildCount := ts_node_child_count(Node);
-  I := 0;
-  while I < ChildCount do
-  begin
-    F := ts_node_field_name_for_child(Node, I);
-    if (F <> nil) and (F = FieldName) then
-    begin
-      Child := ts_node_child(Node, I);
-      Exit(True);
-    end;
-    Inc(I);
-  end;
-end;
 
 function HasChildOfType(const Node: TSNode; const TypeName: string): Boolean;
 var
@@ -246,9 +225,8 @@ end;
 
 procedure CheckPrivateFields(const Node: TSNode; Ctx: TLintContext);
 var
-  ChildCount, I, SecCount, J, FieldCount, K: LongWord;
+  ChildCount, I, SecCount, J: LongWord;
   Section, Field, NameChild: TSNode;
-  FieldName: PAnsiChar;
 begin
   // class 以外（object / record）のフィールドは対象外。
   if not HasChildOfType(Node, 'kClass') then Exit;
@@ -267,22 +245,11 @@ begin
       begin
         Field := ts_node_child(Section, J);
         if ts_node_type(Field) = 'declField' then
-        begin
-          // `A, B: Integer;` のように name が複数ありうる。
-          FieldCount := ts_node_child_count(Field);
-          K := 0;
-          while K < FieldCount do
-          begin
-            FieldName := ts_node_field_name_for_child(Field, K);
-            if (FieldName <> nil) and (FieldName = 'name') then
-            begin
-              NameChild := ts_node_child(Field, K);
-              if ts_node_type(NameChild) = 'identifier' then
-                CheckName(NameChild, Ctx, ncPrivateField);
-            end;
-            Inc(K);
-          end;
-        end;
+          // `A, B: Integer;` のように name が複数ありうる（区切りの","トークンも
+          // 同じフィールド名で並ぶため、identifier型だけを拾う）。
+          for NameChild in CollectFieldChildren(Field, 'name') do
+            if ts_node_type(NameChild) = 'identifier' then
+              CheckName(NameChild, Ctx, ncPrivateField);
         Inc(J);
       end;
     end;

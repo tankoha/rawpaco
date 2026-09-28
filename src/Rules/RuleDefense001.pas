@@ -42,6 +42,9 @@ type
 
 implementation
 
+uses
+  ASTHelpers;
+
 const
   CRuleId = 'RAWPACO-DEFENSE-001';
   // 設計書4.1.2節: 例外を握りつぶすと呼び出し元は失敗を一切知り得ず、
@@ -86,22 +89,12 @@ end;
 
 procedure TRuleDefense001.CheckTry(const Node: TSNode; Ctx: TLintContext);
 var
-  ChildCount, I: LongWord;
-  ExceptChildren: array of TSNode;
+  I: LongWord;
+  ExceptChildren: TSNodeArray;
 begin
-  SetLength(ExceptChildren, 0);
-  ChildCount := ts_node_child_count(Node);
-  I := 0;
-  while I < ChildCount do // 符号なしLongWordのため"for I := 0 to Count-1"は
-                          // Count=0でアンダーフローする(ASTWalker.pas参照)。
-  begin
-    if ts_node_field_name_for_child(Node, I) = 'except' then
-    begin
-      SetLength(ExceptChildren, Length(ExceptChildren) + 1);
-      ExceptChildren[High(ExceptChildren)] := ts_node_child(Node, I);
-    end;
-    Inc(I);
-  end;
+  // `except`は同じフィールド名で複数の子を持つ(kExceptトークン + 中身)ため、
+  // 全件を受け取るCollectFieldChildrenを使う。
+  ExceptChildren := CollectFieldChildren(Node, 'except');
 
   if Length(ExceptChildren) = 0 then
     Exit; // except節自体がない(try/finallyのみ) — このルールの対象外
@@ -131,26 +124,9 @@ end;
 
 procedure TRuleDefense001.CheckExceptionHandler(const Node: TSNode; Ctx: TLintContext);
 var
-  ChildCount, I: LongWord;
   BodyNode: TSNode;
-  Found: Boolean;
 begin
-  Found := False;
-  BodyNode := Node; // ダミー初期値。Found=Falseなら以降参照しない。
-  ChildCount := ts_node_child_count(Node);
-  I := 0;
-  while I < ChildCount do
-  begin
-    if ts_node_field_name_for_child(Node, I) = 'body' then
-    begin
-      BodyNode := ts_node_child(Node, I);
-      Found := True;
-      Break;
-    end;
-    Inc(I);
-  end;
-
-  if not Found then
+  if not FindFieldChild(Node, 'body', BodyNode) then
     Exit; // 文法上bodyは必ず存在するはずだが、将来の文法変更やエラー
           // ノードに備え、見つからない場合は何もしない(CLAUDE.mdルール5)。
 
