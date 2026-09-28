@@ -113,6 +113,23 @@
 - 2回目の失敗（run 30815734423）: `rtl-generics`ディレクトリだけを個別に`-Fu`で足したところ、今度は依存先の`Fatal: Can't find unit Variants used by Generics.Defaults`が発覚。パッケージ単位で1つずつ`-Fu`を足す芋づる式のホワックアモグラは非効率と判断し、Linuxのfpc.cfgと同じ`-Fu<dir>/*`ワイルドカード方式に切り替えた。`rtl-generics`ディレクトリの親(`units\i386-win32`、fpctarget相当)を検出し、`-Fu$FPC_UNITS_ROOT/*`として全パッケージサブディレクトリを一括で検索パスに含めるようにした（`.github/workflows/ci.yml`）。未検証・要フォローアップ。
 - 64bit（`ppcx64.exe`）経路について: 追わない方針で決着。理由は(1)32bitのままで全ての問題が解決したこと、(2)`i_win.pas`の`system_x86_64_win64_info`も`link : ld_int_windows`であり、win64でも既定は同じ内部リンカなので`-Xe`等の同じ対処が結局必要になること、(3)chocoの`freepascal`パッケージでは`ppcx64.exe`が配置されない制約（7回目実行までで確認済み）が残ること。将来どうしても64bitが必要になった場合の候補としては、`choco install lazarus`（win64版Lazarusインストーラはネイティブのwin64 FPC = `ppcx64.exe`を同梱する）や`fpcupdeluxe`/`ollydev/setup-lazarus`系のGitHub Actionがあるが、いずれも未検証。
 
+## vendoring した依存ライブラリのシンボル一覧について（2026-09-29 追加）
+
+- 生成コマンド: `bash tools/gen_vendor_symbols.sh <name> <source-dir> [fpc-flags...]`（例: `bash tools/gen_vendor_symbols.sh horse vendor/horse/src -Mdelphi`）。生成物は `data/vendor-<name>-symbols.txt` で、形式は `data/fpc-rtl-symbols.txt` と同一。`src/FPCSymbols.pas` が `data/` 配下の `vendor-*-symbols.txt` を全部追加で読む（読み込み順で結果が変わらないようファイル名順にソートしてから読む）。
+- **RTL 用と別スクリプトにした理由**: RTL 側は OS が配置済みの `.ppu` を `ppudump` にかけるだけだが、第三者ライブラリは `.ppu` が無いので**まず fpc でコンパイルする**必要があり、必要なフラグ（モード・検索パス）がライブラリごとに違う。抽出そのものは同じ `tools/ppudump_symbols.awk` を使い回している。
+- **ファイルを分けた理由**: mORMot2 のようにユニット数が桁違いのライブラリを RTL の一覧に混ぜると、RTL 側の再生成（`tools/gen_fpc_symbols.sh`）で依存側の情報が消える。ライブラリごとに独立して再生成・追加・削除できる形にした。
+- **U 行は必ず `loose` で出す**。判定A（ユニット修飾された参照の実在確認）は `strict` なユニットにのみ効くため、抽出の網羅性が確認できないうちに `strict` にすると「実在する API を実在しないと言う」最悪の誤検知になる。2段運用（`loose` で取り込む → 実コードで誤検知ゼロを実測 → `strict` に上げる）を推奨。
+- **end-to-end 検証済み（2026-09-29）**: Horse（`https://github.com/HashLoad/horse.git`）を scratchpad にクローンして `-Mdelphi` で実行し、77ユニット中49がコンパイルでき4427行の一覧が生成された（残り28は Indy 等の外部依存やユニット間の依存順の問題。スクリプトは1ユニットずつコンパイルし失敗は記録して続ける方式）。その一覧を `data/` に置いた状態では `uses Horse.Commons` のファイル内の実在しない呼び出しが RAWPACO-HALLUC-001 の判定Bで報告され、一覧を外すと何も報告されないことを確認した。**生成物はコミットしていない**（どのライブラリを vendoring するかはリポジトリサイズ・ライセンス同梱・バージョン固定を含むオーナー判断のため）。
+- テストは `tests/run_tests.sh` の `vendor_data_case`。本番の `data/` を汚さないよう `RAWPACO_DATA_DIR=tests/data` に差し替え、`tests/data/vendor-testlib-symbols.txt` の有無で判定Bの門番が開くかを見る。
+
+## dotted（名前空間付き）ユニット名の対応について（2026-09-29 追加）
+
+mORMot2（`mormot.core.*`）と Horse（`Horse.*`）を扱うために必要だった2件の修正。
+
+- **`tools/ppudump_symbols.awk`**: `ppudump` はドット付きユニット名に対して接頭辞を `NameSpace symbol Generics` のような形で出す。これをエクスポート扱いしていたため、**コミット済みの `data/fpc-rtl-symbols.txt` に存在しない `G Generics` が `generics.collections`/`generics.defaults`/`generics.strings` の3ユニットそれぞれに混入していた**。`kind != "NameSpace"` を条件に追加して除去。
+- **`src/Rules/RuleHalluc001.pas` / `src/Rules/RuleDepr002.pas`**: どちらも修飾子を `ts_node_type(LhsNode) = 'identifier'` に限定していたため、`Generics.Collections.Foo` のように lhs 自体が `exprDot` になる形が丸ごとスキップされていた。`ASTHelpers.TryGetDotQualifier` を新設して両方の形を読むようにした。`exprDot` は左結合なので、`Horse.Core.GetHorse.Listen` のように「ユニット名の後にさらにメンバが続く」形でも、修飾子がちょうど `Horse.Core` になる内側のノードで一致する（最長一致の特別な処理は不要だった）。先頭セグメントが同一ファイル内で宣言されている場合は触らない門番も入れた。
+- **`data/fpc-rtl-symbols.txt` を再生成した（2026-09-29）**。`G Generics` の3件が消えたほか、**`M` 行が2398件減った**。これは awk 修正とは無関係の環境差で、`fpc-source` のパッケージリビジョンが **`3.2.2+dfsg-32` から `3.2.2+dfsg-49` に上がった**ことにより、`tools/gen_fpc_symbols.sh` が「同名ソースが複数ある場合のみ `*h.inc` も舐める」という条件に該当するユニットが減ったため（`blowfish` が1138→79、`fmtbcd` が435→120 等）。既知名が減ると HALLUC-001 の誤検知が増える方向なので fpc-source 全体で実測したが、**全ルールの検知件数に変化はなく HALLUC-001 は0件のまま**だった。
+
 ## 設定ファイル (`rawpaco.json`) について
 
 - スキーマ・探索順・既定値の根拠は `docs/CONFIG.md` を参照。実装は `src/RawpacoConfig.pas`。

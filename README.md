@@ -69,8 +69,8 @@ make selflint  # 本ツール自身のソースをlintし警告ゼロを確認 /
 - `src/Rules/` — lintルールごとの実装（1ルール=1ユニット） / one unit per lint rule
 - `tests/` — lint ルールごとの positive/negative サンプルとCLIオプションのテスト / positive/negative samples per lint rule, plus CLI option tests
 - `docs/` — 設計ドキュメント（ルールエンジン設計書など） / design documents (rule engine design, etc.)
-- `data/` — `RAWPACO-DEPR-002`/`RAWPACO-HALLUC-001` が参照するFPC RTL/FCLシンボル一覧（静的コミット） / FPC RTL/FCL symbol data used by `RAWPACO-DEPR-002`/`RAWPACO-HALLUC-001` (statically committed)
-- `tools/` — 上記シンボル一覧を再生成するスクリプト / scripts to regenerate the symbol data above
+- `data/` — `RAWPACO-DEPR-002`/`RAWPACO-HALLUC-001` が参照するFPC RTL/FCLシンボル一覧（静的コミット）。vendoring した依存ライブラリの一覧を `vendor-<name>-symbols.txt` として並べて置くと追加で読み込まれる / FPC RTL/FCL symbol data used by `RAWPACO-DEPR-002`/`RAWPACO-HALLUC-001` (statically committed); `vendor-<name>-symbols.txt` files placed alongside it are loaded as well
+- `tools/` — 上記シンボル一覧を再生成するスクリプト（RTL 用 `gen_fpc_symbols.sh` と、vendoring した依存ライブラリ用 `gen_vendor_symbols.sh`） / scripts to regenerate the symbol data above (`gen_fpc_symbols.sh` for the RTL, `gen_vendor_symbols.sh` for a vendored library)
 - `vendor/` — tree-sitter本体・tree-sitter-pascalのvendoringされたソース（バージョン固定） / vendored, version-pinned sources for tree-sitter core and tree-sitter-pascal
 
 ## 実装方針 / Design

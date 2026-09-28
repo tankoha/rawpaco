@@ -1,0 +1,3 @@
+# minimal vendored-library table for tests
+U	vendorns.extra	loose
+G	VendorThing	.	

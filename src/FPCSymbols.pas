@@ -194,10 +194,38 @@ begin
   CurrentUnit.Symbols.Add(Key, Info);
 end;
 
-procedure EnsureLoaded;
+// 1つのデータファイルを読み込む。読めなければ False（呼び出し側が
+// 「無かった」ものとして扱う）。
+function LoadDataFile(const FileName: string): Boolean;
 var
   Lines: TStringList;
   CurrentUnit: TUnitEntry;
+  I: Integer;
+begin
+  Result := False;
+  Lines := TStringList.Create;
+  try
+    try
+      Lines.LoadFromFile(FileName);
+    except
+      // 読めなければルールを黙って無効化する（CLAUDE.mdルール5: 疑わしきは見逃す）。
+      // 例外の種類で挙動を変えないので on 節は書かない。
+      Exit;
+    end;
+    CurrentUnit := nil;
+    for I := 0 to Lines.Count - 1 do
+      ParseLine(Lines[I], CurrentUnit);
+    Result := True;
+  finally
+    Lines.Free;
+  end;
+end;
+
+procedure EnsureLoaded;
+var
+  VendorFiles: TStringList;
+  Info: TSearchRec;
+  DataDir: string;
   I: Integer;
 begin
   if GLoaded then Exit;
@@ -207,21 +235,39 @@ begin
   GDataFile := FindDataFile;
   if GDataFile = '' then Exit;
 
-  Lines := TStringList.Create;
+  if not LoadDataFile(GDataFile) then
+  begin
+    GDataFile := '';
+    Exit;
+  end;
+
+  // vendoring した依存ライブラリのシンボル一覧（tools/gen_vendor_symbols.sh が
+  // 生成する data/vendor-<name>-symbols.txt）を、見つかった分だけ追加で読む。
+  // RTL 側と同じ形式なので同じパーサを使い回せる。
+  //
+  // 別ファイルに分けている理由: mORMot2 のようにユニット数が桁違いのライブラリを
+  // RTL の一覧に混ぜると、RTL 側の再生成（tools/gen_fpc_symbols.sh）で依存側の
+  // 情報が消えてしまう。ライブラリごとに独立して再生成・追加・削除できる形に
+  // しておく。
+  DataDir := ExtractFilePath(GDataFile);
+  VendorFiles := TStringList.Create;
   try
-    try
-      Lines.LoadFromFile(GDataFile);
-    except
-      // 読めなければルールを黙って無効化する（CLAUDE.mdルール5: 疑わしきは見逃す）。
-      // 例外の種類で挙動を変えないので on 節は書かない。
-      GDataFile := '';
-      Exit;
+    if FindFirst(DataDir + 'vendor-*-symbols.txt', faAnyFile, Info) = 0 then
+    begin
+      repeat
+        // ディレクトリは対象外（同名のディレクトリが作られても落ちないように）。
+        if (Info.Attr and faDirectory) = 0 then
+          VendorFiles.Add(DataDir + Info.Name);
+      until FindNext(Info) <> 0;
+      FindClose(Info);
     end;
-    CurrentUnit := nil;
-    for I := 0 to Lines.Count - 1 do
-      ParseLine(Lines[I], CurrentUnit);
+    // 読み込み順で結果が変わらないようにファイル名順に揃える（同じユニット名が
+    // 複数のライブラリに現れた場合、後から読んだ方が勝つため）。
+    VendorFiles.Sort;
+    for I := 0 to VendorFiles.Count - 1 do
+      LoadDataFile(VendorFiles[I]);
   finally
-    Lines.Free;
+    VendorFiles.Free;
   end;
 end;
 

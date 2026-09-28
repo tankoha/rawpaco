@@ -125,19 +125,20 @@ end;
 
 procedure TDepr002Scan.CheckDotted(const Node: TSNode);
 var
-  LhsNode, RhsNode: TSNode;
-  HasLhs, HasRhs: Boolean;
-  QualifierUnit, Name: string;
+  RhsNode: TSNode;
+  QualifierUnit, Qualifier, FirstSegment, Name: string;
   Info: TFPCSymbolInfo;
 begin
-  HasLhs := FindFieldChild(Node, 'lhs', LhsNode);
-  HasRhs := FindFieldChild(Node, 'rhs', RhsNode);
-
-  if not (HasLhs and HasRhs) then Exit;
-  if ts_node_type(LhsNode) <> 'identifier' then Exit;
+  if not FindFieldChild(Node, 'rhs', RhsNode) then Exit;
   if ts_node_type(RhsNode) <> 'identifier' then Exit;
 
-  QualifierUnit := FindUnitByName(FUnits, FCtx.GetNodeText(LhsNode));
+  // lhs は単純な identifier だけでなく、`Generics.Collections` のような
+  // ドット付きユニット名（lhs 自体が exprDot）も受け付ける
+  // （ASTHelpers.TryGetDotQualifier のコメント参照）。
+  if not TryGetDotQualifier(Node, FCtx, Qualifier, FirstSegment) then Exit;
+  if FDeclared.ContainsKey(UpperCase(FirstSegment)) then Exit;
+
+  QualifierUnit := FindUnitByName(FUnits, Qualifier);
   if QualifierUnit = '' then Exit;
 
   Name := FCtx.GetNodeText(RhsNode);

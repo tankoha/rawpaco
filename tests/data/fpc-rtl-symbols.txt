@@ -1,0 +1,5 @@
+# minimal RTL table for tests
+U	sysutils	strict
+G	Format	.	
+U	testns.core	loose
+G	CoreThing	.	

@@ -86,8 +86,15 @@ function isIdent(s) { return (s ~ /^[A-Za-z_][A-Za-z0-9_]*$/) }
 function flushSym(   i, dep, msg, alldep) {
   if (!have) { resetSym(); return }
   # 'Unit symbol' はユニット自身の名前とuses一覧であってエクスポートではない。
+  # 'NameSpace symbol' も同様で、`Generics.Collections` のようなドット付き
+  # ユニット名に対して ppudump が接頭辞部分('Generics')を別シンボルとして
+  # 出すもの。これをエクスポート扱いにすると、存在しないユニットレベル
+  # シンボル(`G Generics`)がデータに混入する。実際に混入していた
+  # (generics.collections / generics.defaults / generics.strings の3ユニット)。
+  # mORMot2 の `mormot.core.*` のような名前空間付きの依存を追加すると
+  # 同じ形で大量に混入するため、ここで除外する。
   # コンパイラ内部名($ansistrrec1 等)はPascal識別子として書けないので除外する。
-  if (kind != "Unit" && vis == "public" && isIdent(name)) {
+  if (kind != "Unit" && kind != "NameSpace" && vis == "public" && isIdent(name)) {
     dep = owndep; msg = ownmsg
     if (!dep && ndefs > 0) {
       # オーバーロードがある場合、全ての定義がdeprecatedのときだけdeprecated扱いに

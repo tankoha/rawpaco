@@ -101,7 +101,32 @@ procedure CollectDeclaredNames(const Node: TSNode; Ctx: TLintContext; Names: TNa
 
 // Units の中から Name と（大文字小文字を無視して）一致するものを、元の綴りの
 // まま返す。見つからなければ空文字列。
+//
+// 比較時は両側から空白・改行を落とす。`uses Generics.Collections;` を改行を
+// 挟んで書いた場合や、`Generics . Collections` のような修飾子から取り出した
+// テキストと突き合わせられるようにするため（通常のユニット名に空白は無いので
+// 既存の挙動は変わらない）。
 function FindUnitByName(Units: TUnitList; const Name: string): string;
+
+// `exprDot` の lhs を「ユニット修飾子」として読み出す。
+//
+// `SysUtils.Foo` のように lhs が単純な `identifier` の場合と、
+// `Generics.Collections.TList` や `mormot.core.text.FormatUTF8` のように
+// **lhs 自体がドットで繋がった `exprDot`** になる場合の両方に対応する。
+// `exprDot` は左結合なので、外側のノードの lhs には常に「最後の識別子より前の
+// 全体」が入る（実機確認済み）。したがって lhs のテキストをそのまま修飾子として
+// 読めばよく、再帰は不要。
+//
+// `Horse.Core.GetHorse.Listen(...)` のように「ユニット名の後にさらにメンバが
+// 続く」形では、外側の exprDot の lhs は `Horse.Core.GetHorse` でユニット名に
+// 一致しないが、その内側の exprDot の lhs は `Horse.Core` で一致する。
+// 呼び出し側の走査が入れ子の exprDot も訪れる限り、適切な段で自然に一致する。
+//
+// FirstSegment には先頭のセグメント（`Generics.Collections` なら `Generics`）を
+// 返す。呼び出し側が「同名のローカル変数・型がファイル内で宣言されていないか」を
+// 確認するために使う。
+function TryGetDotQualifier(const DotNode: TSNode; Ctx: TLintContext;
+  out Qualifier, FirstSegment: string): Boolean;
 
 // 式ノードが `<何か>.Create` または `<何か>.Create(...)` の形（括弧の有無を
 // 問わない）なら True を返し、`.Create` の左側のテキスト（型名として書かれて
@@ -239,14 +264,54 @@ begin
   end;
 end;
 
+function StripWhitespace(const S: string): string;
+var
+  I: Integer;
+  Buf: string;
+begin
+  Buf := '';
+  for I := 1 to Length(S) do
+    if not (S[I] in [' ', #9, #10, #13]) then
+      Buf := Buf + S[I];
+  Result := Buf;
+end;
+
 function FindUnitByName(Units: TUnitList; const Name: string): string;
 var
-  U: string;
+  U, Target: string;
 begin
   Result := '';
+  Target := StripWhitespace(Name);
   for U in Units do
-    if CompareText(U, Name) = 0 then
+    if CompareText(StripWhitespace(U), Target) = 0 then
       Exit(U);
+end;
+
+function TryGetDotQualifier(const DotNode: TSNode; Ctx: TLintContext;
+  out Qualifier, FirstSegment: string): Boolean;
+var
+  LhsNode: TSNode;
+  LhsType: PAnsiChar;
+  DotPos: Integer;
+begin
+  Result := False;
+  Qualifier := '';
+  FirstSegment := '';
+  if not FindFieldChild(DotNode, 'lhs', LhsNode) then Exit;
+
+  LhsType := ts_node_type(LhsNode);
+  if (LhsType <> 'identifier') and (LhsType <> 'exprDot') then Exit;
+
+  Qualifier := StripWhitespace(Ctx.GetNodeText(LhsNode));
+  if Qualifier = '' then Exit;
+
+  DotPos := Pos('.', Qualifier);
+  if DotPos > 0 then
+    FirstSegment := Copy(Qualifier, 1, DotPos - 1)
+  else
+    FirstSegment := Qualifier;
+
+  Result := True;
 end;
 
 function TryGetConstructorCallTypeName(const Node: TSNode; Ctx: TLintContext;

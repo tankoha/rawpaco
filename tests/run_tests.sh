@@ -203,6 +203,33 @@ config_case 'disabled categories'    tests/config/custom_prefixes.json "$NEG_STY
 # 設定ファイルの誤りは黙って無視せずエラー終了(2)にする
 config_case 'unknown key is an error' tests/config/broken.json         "$POS_STYLE" no  2
 
+# data/vendor-<name>-symbols.txt の追加読み込み（src/FPCSymbols.pas）を検証する。
+# 本番の data/ を汚さないよう RAWPACO_DATA_DIR で tests/data/ に差し替え、
+# vendor ファイルの有無で RAWPACO-HALLUC-001 の判定B（「usesが全て既知ユニット」
+# という門番）が開くかどうかを見る。
+vendor_data_case() {
+  local desc="$1" with_vendor="$2" want_tag="$3" want_rc="$4"
+  local target=tests/vendordata/unknown_call_with_vendor_unit.pas
+  local vfile=tests/data/vendor-testlib-symbols.txt
+  local hidden="$vfile.hidden" output rc found
+
+  if [ "$with_vendor" = no ]; then mv "$vfile" "$hidden"; fi
+  output="$(RAWPACO_DATA_DIR=tests/data "$RAWPACO" --fail-on=warning "$target" 2>&1)"; rc=$?
+  if [ "$with_vendor" = no ]; then mv "$hidden" "$vfile"; fi
+
+  if echo "$output" | grep -qF "[RAWPACO-HALLUC-001]"; then found=yes; else found=no; fi
+  if [ "$found" != "$want_tag" ] || [ "$rc" != "$want_rc" ]; then
+    echo "FAIL: vendor data case '$desc': expected tag=$want_tag/rc=$want_rc, got tag=$found/rc=$rc"
+    echo "$output" | sed 's/^/  /'
+    FAIL=1
+  else
+    echo "ok:   vendor data case '$desc'"
+  fi
+}
+
+vendor_data_case 'vendor symbol file makes its units known (judgment B applies)' yes yes 1
+vendor_data_case 'without it the unit is unknown and judgment B is disabled'      no  no  0
+
 if [ "$FAIL" -ne 0 ]; then
   echo "run_tests.sh: FAILURES DETECTED"
   exit 1

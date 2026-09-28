@@ -137,19 +137,23 @@ end;
 
 procedure THallucScan.CheckQualified(const Node: TSNode);
 var
-  LhsNode, RhsNode: TSNode;
-  Qualifier, Name: string;
+  RhsNode: TSNode;
+  Qualifier, FirstSegment, Name: string;
   Matched: string;
 begin
-  if not FindFieldChild(Node, 'lhs', LhsNode) then Exit;
   if not FindFieldChild(Node, 'rhs', RhsNode) then Exit;
-  if ts_node_type(LhsNode) <> 'identifier' then Exit;
   if ts_node_type(RhsNode) <> 'identifier' then Exit;
 
-  Qualifier := FCtx.GetNodeText(LhsNode);
+  // lhs は単純な identifier だけでなく、`Generics.Collections` のような
+  // ドット付きユニット名（lhs 自体が exprDot）も受け付ける。
+  if not TryGetDotQualifier(Node, FCtx, Qualifier, FirstSegment) then Exit;
+
   // 同名のローカル変数・型がファイル内で宣言されていたら、それはユニット参照
-  // ではないかもしれないので触らない。
+  // ではないかもしれないので触らない。ドット付きの場合は先頭セグメントで見る
+  // （`Generics` という名前のレコード変数があれば `Generics.Collections` は
+  // ユニット参照ではない可能性がある）。
   if IsDeclaredHere(Qualifier) then Exit;
+  if IsDeclaredHere(FirstSegment) then Exit;
 
   Matched := FindUnitByName(FUnits, Qualifier);
   if Matched = '' then Exit;
