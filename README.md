@@ -78,6 +78,7 @@ make selflint  # 本ツール自身のソースをlintし警告ゼロを確認 /
 - 実装言語: FPC (Object Pascal) / Implementation language: FPC (Object Pascal)
 - 構文解析: tree-sitter-pascal（tree-sitter の C API を cdecl で直接呼び出す） / Parsing: tree-sitter-pascal (calls the tree-sitter C API directly via cdecl)
 - 対象: Delphi/FPC 系 Pascal（Oxygene は対象外） / Scope: Delphi/FPC-family Pascal (Oxygene is out of scope)
+- Unleashed Pascal（FPC の実験的フォーク、`{$mode unleashed}`）: 対応に向けた調査を開始した段階。現状の tree-sitter-pascal は固有構文（`defer`・`autofree`・文式・タプル等）を受け付けず、該当ファイルでは一部ルールが無効化される。詳細は [HANDOFF.md](HANDOFF.md) を参照 / Unleashed Pascal (an experimental FPC fork, `{$mode unleashed}`): investigation toward support has started. The current tree-sitter-pascal does not accept its syntax (`defer`, `autofree`, statement expressions, tuples, etc.), so some rules are disabled on such files. See [HANDOFF.md](HANDOFF.md) for details.
 
 ## 開発ルール / Development Rules
 
