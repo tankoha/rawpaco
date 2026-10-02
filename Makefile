@@ -26,7 +26,7 @@ RULE_SOURCES := src/Diagnostics.pas src/RuleRegistry.pas src/ASTWalker.pas \
                 src/Rules/RuleMem001.pas \
                 src/Rules/AllRules.pas
 
-.PHONY: all clean test selflint
+.PHONY: all clean test selflint probe
 
 all: src/rawpaco
 
@@ -49,6 +49,15 @@ src/rawpaco: src/rawpaco.lpr src/TSBindings.pas $(RULE_SOURCES) $(TS_OBJ) $(TSP_
 
 test: src/rawpaco
 	bash tests/run_tests.sh
+
+# 文法プローブ(tools/ts_probe.c)。FPC 不要で、tree-sitter-pascal が受け付けない
+# 構文を ERROR ノードの粒度で確かめる。tests/probes/ 配下のサンプルに対して
+# `build/ts_probe [-s] <file.pas>` で使う。CI には組み込まない(lint 結果の
+# 検証ではなく、文法カバレッジ調査用のため)。
+probe: $(BUILD)/ts_probe
+
+$(BUILD)/ts_probe: tools/ts_probe.c $(TS_OBJ) $(TSP_OBJ)
+	$(CC) $< $(TS_OBJ) $(TSP_OBJ) -I $(VENDOR_TS)/include -o $@
 
 # CLAUDE.mdルール4: 本ツール自身のソースをlintし警告ゼロを維持する。
 # --fail-on=warningが必須(設計書4.1.4節): 重要度別終了コード制御の既定は

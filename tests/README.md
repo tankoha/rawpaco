@@ -12,3 +12,5 @@ lint ルールごとのサンプルコードを配置する。CLAUDE.md のテ�
 `RAWPACO-DEPR-002` / `RAWPACO-HALLUC-001` は `data/fpc-rtl-symbols.txt` を参照する。実行時の探索順は `src/FPCSymbols.pas` を参照（リポジトリ直下から `./src/rawpaco` を起動する通常の使い方なら自動的に見つかる）。
 
 `suppression/` — 抑制コメント（`// rawpaco:ignore <RuleId>`）の配線を確認するためのサンプル。個別ルールの検知可否ではなく「対象行/直前行への抑制コメントで診断が消えるか」「無関係なRuleIdを書いた場合は消えないか」というルール横断の挙動を見るため、`positive`/`negative` とは別ディレクトリに置いている（RAWPACO-DEFENSE-001を検証対象ルールとして流用）。
+
+`probes/` — lint ルールの検証ではなく、**tree-sitter-pascal の文法カバレッジ調査**用のサンプル。`run_tests.sh` の対象外で、警告の有無も問わない。`make probe` で `build/ts_probe` を作り、`build/ts_probe [-s] tests/probes/<topic>/<file>.pas` で ERROR ノードの位置(と `-s` で木全体の S 式)を見る。結果と結論は `HANDOFF.md` の「文法カバレッジの既知の穴」に書く。`probes/unleashed/` は Unleashed Pascal（FPC の実験的フォーク）の固有構文を集めたもので、各ファイル冒頭のコメントが対象機能を示す。
