@@ -56,6 +56,33 @@
   - **ルールへの影響（`./src/rawpaco` で実測）**: 16 サンプル全てで診断ゼロ。これは誤検知ゼロという意味では良いが、理由は主に門番で、(1) `RAWPACO-MEM-001`/`MEM-002`/`MODE-001`/`MODE-002`/`HALLUC-001` は `ts_node_has_error` が真のファイルを丸ごと対象外にするため、`defer` や `autofree` が**ファイル内に1つあるだけで**そのファイルの他の手続きにある本物の解放漏れも検知されなくなる（`16_mem001_gate_disabled.pas` で確認: 同内容から `defer` 行だけ除くと MEM-001 が2件出る）、(2) `MODE-001` は `unleashed` が `IsKnownModeName` に無いので設計（d）どおり判定を諦める（`{$mode unleashed}` が `$H` をどう扱うかは未調査。Unleashed 側が `$H+` を含意するなら将来 `CLongStringModes` 側に足す必要がある）。門番を持たない `SEC-001`/`SEC-002`/`DEFENSE-001/002`/`DEPR-001/002`/`STYLE-001/002` は ERROR の周辺で木の形が保たれる限り動く。
   - **結論・方針**: 現時点では tree-sitter-pascal 上流に Unleashed 対応はなく（grammar.js に `defer`/`autofree`/`lock` のトークンは無い）、CLAUDE.md ルール2（ピン留め）とルール5（疑わしきは見逃す）のもとでは、Unleashed 構文を含むファイルで一部ルールが静かに無効化される現状を**既知の制限として受け入れる**。対応するなら選択肢は (a) 上流 grammar への `{$mode unleashed}` 系構文の追加を待つ/提案する、(b) rawpaco 側で `{$mode unleashed}` を見つけたら「このファイルは一部ルールが無効」と明示的に 1 件の情報診断を出す（静かな無効化を可視化する）。(b) は小さく、ルール5にも反しないので、需要が出たら最初に検討する。
 
+## 外部ツールとの比較・統合検討（2026-10、未決）
+
+結論が出たものではなく、今後の方針判断の材料として残す。調査時点のコミットは sonar-delphi `f1b67ba`（2026-09-22）、Opengrep `ffe40a1`（2026-10-10）。
+
+### sonar-delphi（SonarQube の Delphi プラグイン）との重複
+
+- **対象言語がほぼ重ならない。** sonar-delphi は Delphi 専用で、スキャン時に Delphi のインストール先（`sonar.delphi.installationPath`）と Delphi のコンパイラバージョン（`VER360` 等）を必須にする。FPC への言及は型比較アルゴリズムの参考元として FPC コンパイラのソースを引いている箇所だけ。独自パーサ＋意味解析で tree-sitter は使わない。LGPL-3.0。
+- **ルールの重複（チェッククラス 154 個と突き合わせ）**: 実質同じなのは DEFENSE-001 ↔ SwallowedException/EmptyBlock と、STYLE-001 ↔ ClassName/FieldName/InterfaceName/PointerName 等の 2 つ。DEFENSE-002 ↔ AssignedAndFree は別パターン（後者は `Free` 前の冗長な `Assigned`）。DEPR-002 ↔ DateFormatSettings/ForbiddenRoutine は一部のみ。SEC-001/002、DEPR-001、HALLUC-001、MODE-001/002、MEM-001/002、STYLE-002 は重複なし（解放漏れ・finally 漏れを見るルールは sonar-delphi に無い）。
+- sonar-delphi にしかないもの（未使用変数・未初期化変数・Format 引数型・冗長キャスト・複雑度など）は型解決が前提で、構文木だけの rawpaco が真似ると CLAUDE.md ルール5 に反しやすい。
+
+### tree-sitter-pascal を Opengrep に統合する案
+
+- Opengrep には現時点で Pascal 対応は無い（`languages/` に無い）。言語ごとに tree-sitter の木を共通 AST に変換する OCaml コード（`Parse_<lang>_tree_sitter.ml`、既存言語で 300〜5000 行、C#/Apex/Dart 級で 3200〜4000 行）を手書きする方式。
+- **上流マージを狙う場合の評価: 中程度〜やや難。** 構文パターン照合だけで 1〜2 人月、テイント解析（`with` の名前解決・暗黙の `Result`・`var`/`out` 引数・プロパティの中間言語化）まで含めるとさらに数か月、と概算（変換コードの規模からの推測で裏付けは無い）。
+- 易しい点: 手順が確立している / tree-sitter-pascal は外部スキャナ無しで組み込みやすい / 共通 AST に大文字小文字無視の識別子照合フラグ（`case_insensitive`）が VB.NET 対応時に入っており流用できる。
+- 難しい点: 文法の穴（`raise;` が ERROR 等）が静かな検知漏れになる。Crystal では Opengrep が自前の文法フォーク（`opengrep-crystal`）を持っており、Pascal も同様にフォークして直すのが現実的 / `{$ifdef}`・`{$i}`・マクロは展開されない（C プリプロセッサと同じ問題）/ 前例として Opengrep は VB.NET では tree-sitter を使わずパーサを自作している。
+- **メタ変数と 16 進リテラルの衝突は小さい（当初の見立てを訂正）。** Opengrep のメタ変数は `$` + 英大文字/`_` + 英大文字・数字・`_`（`src/rule/Mvar.ml`）、Pascal の 16 進は `$` + `[a-fA-F0-9]+`（grammar.js の `_literalInt`）。衝突するのは `$A`・`$FF`・`$E1` のように A-F と数字だけの名前に限られ、`$X`・`$OBJ`・`$SQL` は衝突しない。「A-F だけのメタ変数名は使わない」という運用で足り、記法変更は不要。
+- **上流マージを狙わない改造版の場合**: 変換を必要な文・式だけに絞る、文法を自由に直す、テイント解析を捨てる、で概ね半分程度になると見る。ただし OCaml の大きなコードベースと文法→OCaml 型の生成工程を抱え、上流リリースごとの追従コストが続く。FPC 実装の rawpaco とは技術スタックが別物。
+- 改造なしで今日使える道として Opengrep の generic モード（構文木を使わないテキスト照合、メタ変数と `...` は効く）もあるが、構造を理解しないので誤検知の面でルール5 に合いにくい。
+
+### 代替案: tree-sitter クエリを rawpaco に取り込む（推奨候補）
+
+- vendoring 済み tree-sitter v0.24.7 にはクエリ機能（S 式パターン。api.h の `ts_query_new` / `ts_query_cursor_exec` / `ts_query_cursor_next_match`）が既にある。「ルールを Pascal コードではなくデータとして書く」という Opengrep の一番おいしい部分を、新しい依存なしで FPC のまま得られる。
+- 試作: `tools/ts_query.c`（`make probe` で `build/ts_query`）と `tests/probes/queries/sec001_approx.scm`。使い方は `build/ts_query <query.scm> <file.pas> ...`。
+- 実測: SEC-001 の negative 2 件はどちらも一致。一方 positive の `'Hello, ' + UserName` にも一致し、rawpaco 自身のソース（`src/*.pas src/Rules/*.pas`）でも 6 件一致した（本物の SEC-001 はいずれも 0 件）。原因は「リテラルが SQL キーワードを含む」という条件に要る `#match?` 述語を C ランタイムが評価しないこと（`ts_query_predicates_for_pattern` で取り出して呼び出し側が実装する設計）。
+- 本体に取り込む場合の作業: (1) `TSBindings.pas` にクエリ API の cdecl 宣言を追加（api.h と照合、CLAUDE.md ルール1）、(2) `#match?`/`#eq?` 等の述語を Pascal で実装、(3) `.scm` ルールの置き場所・ルールID/重要度/メッセージの書式（`rawpaco.json` との関係含む）を決める、(4) positive/negative サンプル必須（ルール3）を `.scm` ルールにも適用。正規表現は FPC の `RegExpr` ユニットが候補だが、使う場合は freepascal.org で存在を確認すること。
+
 ## FPC RTL/FCL シンボル一覧 (`data/fpc-rtl-symbols.txt`) について
 
 - 生成コマンド: `bash tools/gen_fpc_symbols.sh`（Linux専用。`fpc-source` と `ppudump` が必要）。

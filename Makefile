@@ -50,13 +50,17 @@ src/rawpaco: src/rawpaco.lpr src/TSBindings.pas $(RULE_SOURCES) $(TS_OBJ) $(TSP_
 test: src/rawpaco
 	bash tests/run_tests.sh
 
-# 文法プローブ(tools/ts_probe.c)。FPC 不要で、tree-sitter-pascal が受け付けない
-# 構文を ERROR ノードの粒度で確かめる。tests/probes/ 配下のサンプルに対して
-# `build/ts_probe [-s] <file.pas>` で使う。CI には組み込まない(lint 結果の
-# 検証ではなく、文法カバレッジ調査用のため)。
-probe: $(BUILD)/ts_probe
+# 文法プローブ(tools/ts_probe.c)とクエリ試作(tools/ts_query.c)。いずれも
+# FPC 不要。ts_probe は tree-sitter-pascal が受け付けない構文を ERROR ノードの
+# 粒度で確かめ、ts_query は tree-sitter クエリでルールを書けるかを試す。
+# tests/probes/ 配下のサンプルに対して使う。CI には組み込まない(lint 結果の
+# 検証ではなく、調査用のため)。
+probe: $(BUILD)/ts_probe $(BUILD)/ts_query
 
 $(BUILD)/ts_probe: tools/ts_probe.c $(TS_OBJ) $(TSP_OBJ)
+	$(CC) $< $(TS_OBJ) $(TSP_OBJ) -I $(VENDOR_TS)/include -o $@
+
+$(BUILD)/ts_query: tools/ts_query.c $(TS_OBJ) $(TSP_OBJ)
 	$(CC) $< $(TS_OBJ) $(TSP_OBJ) -I $(VENDOR_TS)/include -o $@
 
 # CLAUDE.mdルール4: 本ツール自身のソースをlintし警告ゼロを維持する。
