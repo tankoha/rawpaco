@@ -3,7 +3,8 @@
 - 作成日: 2026-11-16
 - 位置づけ: 検討・設計ドキュメント（実装は未着手。ソースコードは一切変更していない）
 - 調査対象: opengrep/opengrep `main` の commit `526deafe`（2026-11-13）。rawpaco は commit `ffb5c9c` 時点
-- 言語について: HANDOFF.md の規約では `docs/` の設計書は英語版が正・日本語版は `_jp` 付きだが、本書は依頼の指定どおり日本語のみ・このパスで作成した。規約に揃える（英語版を起こして本書を `_jp` にする）かどうかは未決事項（10章）に挙げてある
+- 言語について: 英語版 `docs/OPENGREP_RULE_ENGINE_DESIGN.md` が正（canonical）。本書は参照用の日本語版で、更新は英語版を先に行う（HANDOFF.md の規約）
+- 決定事項（2026-11-16、オーナー判断）: 推奨案 (d) で進める。本書を `docs/` の命名規約に揃え、英語版を正とする（10章の 1・2 は決着済み）
 
 本書では、根拠の強さを次の3つで書き分ける。
 
@@ -21,7 +22,7 @@
 2. **全機能の FPC 再実装は規模が合わない。** opengrep のエンジン中核（ルール・マッチング・検索・taint・IL・解析・名前解決・autofix・Generic AST 定義）は OCaml で約 6.9 万行ある【実測】。rawpaco は全体で約 5,800 行【実測】。taint モードだけで約 1.9 万行あり、IL・CFG・データフロー・定数伝播・名前解決に依存する。
 3. **現実的なのは「ルール言語のサブセットを FPC で再実装し、tree-sitter-pascal の CST 上で直接動かす」こと。** 検索モード（`pattern` / `patterns` / `pattern-either` / `pattern-not` / `pattern-inside` / `pattern-not-inside` / `pattern-regex` / `metavariable-regex` / `metavariable-pattern` / `focus-metavariable`、メタ変数、ellipsis）は実装できる見込みが高い。パターン断片が tree-sitter-pascal でパースできることは、ラッパーと前処理を条件に確認した【実測、4.2節】。
 
-**推奨案: 案(d)「opengrep 互換サブセットの FPC 再実装」を、既存のネイティブルールと併存する「宣言的ルール層」として段階導入する。**
+**推奨案（2026-11-16 に採用決定）: 案(d)「opengrep 互換サブセットの FPC 再実装」を、既存のネイティブルールと併存する「宣言的ルール層」として段階導入する。**
 
 - 取り込む: 検索モードの主要演算子、メタ変数、ellipsis、メッセージ補間、SARIF 出力、後段で `fix:` による autofix
 - 取り込まない: taint モード、join モード、ファイル間解析、型付きメタ変数、定数伝播・シンボル伝播、SCA、extract モード、generic（spacegrep/aliengrep）モード
@@ -151,7 +152,7 @@ vendoring 済みの `api.h` には `ts_query_*` の API がある【ソース確
 | 区分 | 機能 | 判断 |
 |---|---|---|
 | 取り込む（M1〜M3） | `pattern` / `patterns` / `pattern-either` / `pattern-not` / `pattern-inside` / `pattern-not-inside` | CST 上で実装可能 |
-| | `pattern-regex` / `pattern-not-regex` / `metavariable-regex` | 正規表現の方言差あり（5.3節） |
+| | `pattern-regex` / `pattern-not-regex` / `metavariable-regex` | 正規表現の方言差あり（4.6節） |
 | | `metavariable-pattern` / `focus-metavariable` | 実装可能 |
 | | メタ変数 `$X`、`$_`、ellipsis `...`、名前付き ellipsis `$...ARGS`、文字列の `'...'`、深い式 `<... e ...>` | 実装可能。前処理が必要（4.2節） |
 | | `message` の `$X` 補間、`severity`、`metadata`、`paths` | 実装可能 |
@@ -483,8 +484,8 @@ Linux と Windows の両方でビルドとテストを実行する（ルール7�
 
 ## 10. 未決事項（オーナー判断が必要なもの）
 
-1. **方針そのもの**: 推奨案 (d) で進めるか、「全部」を優先して (b')（opengrep に Pascal を追加）を検討するか、見送るか
-2. **本書の言語と配置**: `docs/` の英語正・`_jp` 併置の規約に揃えるか
+1. ~~**方針そのもの**~~: **決着（2026-11-16）**。推奨案 (d) で進める
+2. ~~**本書の言語と配置**~~: **決着（2026-11-16）**。規約に揃え、英語版 `docs/OPENGREP_RULE_ENGINE_DESIGN.md` を正、本書を `_jp` とした
 3. **`$ABC` 形式のメタ変数**: エラーにする案でよいか（opengrep 非互換）
 4. **`go_deeper_stmt` の既定**: 既定で無効にする案でよいか（opengrep と逆のはず）
 5. **識別子に対する `metavariable-regex`**: 既定で大文字小文字を無視するか

@@ -4,7 +4,7 @@
 
 ## ドキュメントの言語について
 
-`docs/RULE_ENGINE_DESIGN.md`・`docs/SYSTEM_FLOW.md`・`docs/flows/*.md` は英語版が正（canonical）。日本語版はファイル名に`_jp`を付けた別ファイル（例: `docs/RULE_ENGINE_DESIGN_jp.md`）として参照用に残している。内容を更新する際は英語版を先に直し、日本語版は追従（または既に古いことが分かる形でそのまま）とする。新規にこの種のドキュメントを追加する場合も同じ命名規約（英語が無印、日本語が`_jp`）に揃えること。本HANDOFF.md自体・CLAUDE.md・README.mdはこの対象外（README.mdは1ファイル内でJP/EN併記、HANDOFF.mdは元々日本語のみ）。
+`docs/RULE_ENGINE_DESIGN.md`・`docs/SYSTEM_FLOW.md`・`docs/OPENGREP_RULE_ENGINE_DESIGN.md`・`docs/flows/*.md` は英語版が正（canonical）。日本語版はファイル名に`_jp`を付けた別ファイル（例: `docs/RULE_ENGINE_DESIGN_jp.md`）として参照用に残している。内容を更新する際は英語版を先に直し、日本語版は追従（または既に古いことが分かる形でそのまま）とする。新規にこの種のドキュメントを追加する場合も同じ命名規約（英語が無印、日本語が`_jp`）に揃えること。本HANDOFF.md自体・CLAUDE.md・README.mdはこの対象外（README.mdは1ファイル内でJP/EN併記、HANDOFF.mdは元々日本語のみ）。
 
 ## 実装済みルール一覧
 
@@ -224,6 +224,13 @@ mORMot2（`mormot.core.*`）と Horse（`Horse.*`）を扱うために必要だ�
 ### 検証に使ったプローブ
 
 AST ダンププログラム（`ts_node_string` ではなくフィールド名付きのインデント出力）を `src/probe.lpr` として一時的に作って検証し、削除済み。`TSBindings.pas` の `{$L ../build/*.o}` が相対パスなので、再作成する場合も `src/` 直下に置く必要がある。
+
+## opengrep 互換の宣言的ルール層（2026-11-16 方針決定。未着手）
+
+- 検討と設計は `docs/OPENGREP_RULE_ENGINE_DESIGN.md`（英語・正）/ `_jp.md`。opengrep 本体の取り込み（リンク・外部プロセス・全再実装）は不採用。検索モードのサブセットを FPC で再実装し、tree-sitter-pascal の CST 上で動かす案 (d) をオーナーが採用した
+- 次の着手は M0（`RegExpr` の機能確認を freepascal.org と実機で行い、結果をここに記録）。M1〜M2 の後に続行可否を判断する区切りがある
+- 未決事項は設計書 10章の 3〜12（`$ABC` 形式のメタ変数をエラーにするか、`svInfo` 追加など）。M0 の中で必要なものから決める
+- 設計書の【実測】は vendor のソースを gcc でビルドした検証プログラムによるもので、rawpaco 本体（fpc）でのビルド・テストは未実施
 
 ## 次セッションの予定アクション（2026-09-28 時点）
 
