@@ -315,7 +315,7 @@ Recursively match the pattern IR against a target `TSNode`; on success return `(
 
 - An ellipsis in a child list matches zero or more siblings, implemented with backtracking
 - Statement-sequence patterns (`A; ...; B`) match as a **subsequence** of the child list of `block` / `statements` / `blockTr`, with implicit ellipses at both ends. As noted in HANDOFF.md, `begin...end` is `block` while try/repeat bodies are a separate node type `statements`, so all three are targets
-- Whether statements after a statement ellipsis are searched inside nested blocks (equivalent to opengrep's `go_deeper_stmt`) is **off by default**. This is probably the opposite of opengrep's default [Unverified], but searching increases matches and leans toward false positives, so rule 5 applies. Rules can enable it via `options`
+- Whether statements after a statement ellipsis are searched inside nested blocks (equivalent to opengrep's `go_deeper_stmt`) is **on by default**, matching opengrep's (probable [Unverified]) default. **Decided (#4, 2026-11-17):** to keep rule 5 in view, a positive match that was found only by descending into a nested block is reported **one severity level lower** than the rule's severity (`svError` → `svWarning`, `svWarning` → `svInfo`; `svInfo` stays `svInfo`), and its message carries a note that it matched inside a nested block. For negative operators (`pattern-not`, `pattern-not-inside`) the deeper search simply widens what is excluded, which reduces warnings. The "found by going deeper" flag must be carried on the range through boolean composition. Rules can turn the deeper search off with `options: { go_deeper_stmt: false }`
 
 **Pascal-specific handling.** All stem from the shape of tree-sitter-pascal trees; in opengrep this is what the Generic AST translator absorbs.
 
@@ -362,7 +362,7 @@ The top level accepted is a `rules:` array. Per-rule keys: `id` / `message` / `s
 - `languages`: accepts `pascal`. Whether to allow aliases (`delphi`, `fpc`) is open. Rules specifying only other languages are skipped with a one-line notice on stderr
 - Rules containing keys of excluded features (`mode: taint`, `pattern-sources`, `metavariable-type`, etc.) are **load errors**. Silently skipping them would produce "I added a rule but nothing is reported", which could be misread as safe
 - Unknown keys are errors too
-- `severity`: the current `TSeverity` has two values, `svWarning` and `svError`, and declaration order is used by `--fail-on` comparisons [Source-checked: `Diagnostics.pas`]. Map `ERROR` / `HIGH` / `CRITICAL` to `svError` and `WARNING` / `MEDIUM` to `svWarning`. There is nowhere for `INFO` / `LOW`; the recommendation is to add `svInfo` before `svWarning` (adding `info` to `--fail-on`)
+- `severity`: the current `TSeverity` has two values, `svWarning` and `svError`, and declaration order is used by `--fail-on` comparisons [Source-checked: `Diagnostics.pas`]. Map `ERROR` / `HIGH` / `CRITICAL` to `svError` and `WARNING` / `MEDIUM` to `svWarning`. There is nowhere for `INFO` / `LOW`; **Decided (#6, 2026-11-17): add `svInfo` before `svWarning`** (adding `info` to `--fail-on`). It is needed in M2 already, as the target of the one-level downgrade of nested-block matches (#4, Section 4.3)
 
 **How to read YAML.** Four candidates:
 
@@ -430,8 +430,8 @@ Sizes are rough FPC line estimates with low precision.
 |---|---|---|---|
 | **M0** Pre-checks | Confirm `RegExpr` capabilities on freepascal.org and on a real build. Decide open items from Section 10 needed before starting | Small | Decisions recorded in HANDOFF.md |
 | **M1** Pattern core | Preprocessing (metavariables, hex ambiguity error, ellipsis in expression/argument/statement positions), wrappers, pattern IR, matcher (metavariable unification, child-list ellipsis, leaf comparison, paren-less calls, `raise;`). JSON rule files, single `pattern`, `--rules`, message interpolation | 1,500–2,000 lines | A DEFENSE-001 equivalent written as a declarative rule gives the same results on the existing samples |
-| **M2** Combination | `patterns` / `pattern-either` / `pattern-not` / `pattern-inside` / `pattern-not-inside`, range operations, statement-sequence patterns, `pattern-regex` / `pattern-not-regex` / `metavariable-regex`, `focus-metavariable`, diagnostic end positions | 1,000–1,500 lines | Section 7.3 differential tests pass. No crashes on all of fpc-source |
-| **M3** Format and coverage | YAML subset loader, `metavariable-pattern`, declaration-level patterns and position-dependent ellipsis, `<... e ...>`, `$...ARGS`, `paths`, subset of `options`, `svInfo`, SARIF output | 1,500–2,000 lines | Rule-author documentation and compatibility list are publishable |
+| **M2** Combination | `patterns` / `pattern-either` / `pattern-not` / `pattern-inside` / `pattern-not-inside`, range operations, statement-sequence patterns, `pattern-regex` / `pattern-not-regex` / `metavariable-regex`, `focus-metavariable`, diagnostic end positions, `svInfo` (target of the nested-block downgrade) | 1,000–1,500 lines | Section 7.3 differential tests pass. No crashes on all of fpc-source |
+| **M3** Format and coverage | YAML subset loader, `metavariable-pattern`, declaration-level patterns and position-dependent ellipsis, `<... e ...>`, `$...ARGS`, `paths`, subset of `options`, SARIF output | 1,500–2,000 lines | Rule-author documentation and compatibility list are publishable |
 | **M4** Periphery | `metavariable-comparison` (limited), `fix:` / `fix-regex` and `--fix` (suggest-only by default), rule test annotations (`// ruleid:` / `// ok:`), pre-filtering for speed if needed | 1,000–1,500 lines | Several bundled rules added, false positives measured on fpc-source |
 | Out of scope | Taint, join, inter-file, types, constant propagation, SCA, extract, generic mode | — | — |
 
@@ -499,9 +499,9 @@ Build and test on both Linux and Windows (rule 7). Windows is a 32-bit build, so
 1. ~~**Overall direction**~~: **Settled (2026-11-16).** Proceed with option (d)
 2. ~~**Language and location of this document**~~: **Settled (2026-11-16).** Follows the convention: this English file is canonical, the Japanese one is `_jp`
 3. ~~**`$ABC`-style metavariables**~~: **Settled (2026-11-17).** Load error by default; per-rule `options: { pascal_hex_dollar: true }` treats them as hex literals with a warning (Section 4.2)
-4. **Default for `go_deeper_stmt`**: is off-by-default acceptable (probably opposite to opengrep)?
+4. ~~**Default for `go_deeper_stmt`**~~: **Settled (2026-11-17).** On by default; matches found only inside nested blocks are reported one severity level lower; `options: { go_deeper_stmt: false }` turns it off (Section 4.3)
 5. **`metavariable-regex` on identifiers**: case-insensitive by default?
-6. **`severity`**: add `svInfo`, or make `INFO` / `LOW` load errors?
+6. ~~**`severity`**~~: **Settled (2026-11-17).** Add `svInfo` (needed from M2 by #4)
 7. **YAML**: JSON first + own subset, or vendor libyaml?
 8. ~~**Regex**~~: **Settled (2026-11-17).** Start with `RegExpr`; unsupported constructs are load errors; re-evaluate at the start of M2 (Section 4.6)
 9. **How rules are specified**: CLI `--rules` only, or also a key in `rawpaco.json`?

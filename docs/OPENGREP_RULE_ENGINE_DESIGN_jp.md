@@ -315,7 +315,7 @@ Pascal では `$FF` が 16 進リテラルなので、メタ変数をそのま�
 
 - 子の列の中の ellipsis は 0 個以上の兄弟に一致する。バックトラックで実装する
 - 文の並びのパターン（`A; ...; B`）は、`block` / `statements` / `blockTr` の子の列の**部分列**として照合する。先頭と末尾には暗黙の ellipsis がある。HANDOFF.md にあるとおり `begin...end` は `block`、try や repeat の本体は `statements` という別のノード種別なので、3種とも対象にする
-- 文の ellipsis の後ろの文を入れ子のブロックの中まで探すか（opengrep の `go_deeper_stmt` 相当）は、**既定で探さない**とする。opengrep の既定とは逆になるはずだが【未確認】、探すと一致が増えて誤検知側に倒れるため、ルール5 に従う。ルールの `options` で有効化できるようにする
+- 文の ellipsis の後ろの文を入れ子のブロックの中まで探すか（opengrep の `go_deeper_stmt` 相当）は、opengrep の（おそらくの【未確認】）既定に合わせて**既定で探す**。**決定（#4、2026-11-17）:** ルール5 を踏まえ、入れ子のブロックへ潜って初めて見つかった正の一致は、ルールの重要度より**一段低い重要度**で報告する（`svError` → `svWarning`、`svWarning` → `svInfo`、`svInfo` は `svInfo` のまま）。メッセージには入れ子のブロック内での一致である旨の注記を付ける。否定側の演算子（`pattern-not`、`pattern-not-inside`）では深く探すほど除外が広がり、警告は減る。「深く潜って見つけた」印は、ブール演算子の合成を通して範囲に付けたまま持ち回す。ルールの `options: { go_deeper_stmt: false }` で無効にできる
 
 **Pascal 固有の扱い。** いずれも tree-sitter-pascal の木の形に由来し、opengrep なら Generic AST 変換器が吸収している部分である。
 
@@ -362,7 +362,7 @@ Pascal では `$FF` が 16 進リテラルなので、メタ変数をそのま�
 - `languages`: `pascal` を受け付ける。別名（`delphi`、`fpc`）を認めるかは未決。それ以外の言語だけを指定したルールは読み飛ばし、標準エラーに1行で知らせる
 - 取り込まない機能のキー（`mode: taint`、`pattern-sources`、`metavariable-type` など）を含むルールは**読み込みエラー**にする。黙って読み飛ばすと「ルールを入れたのに何も検出されない」状態になり、検出されないことを安全と誤読される
 - 未知のキーもエラー
-- `severity`: 現在の `TSeverity` は `svWarning` と `svError` の2値で、宣言順が `--fail-on` の比較に使われている【ソース確認: `Diagnostics.pas`】。`ERROR` / `HIGH` / `CRITICAL` は `svError`、`WARNING` / `MEDIUM` は `svWarning` に対応させる。`INFO` / `LOW` の受け皿が無いので、`svInfo` を `svWarning` の前に追加する案を推奨する（`--fail-on` に `info` が増える）
+- `severity`: 現在の `TSeverity` は `svWarning` と `svError` の2値で、宣言順が `--fail-on` の比較に使われている【ソース確認: `Diagnostics.pas`】。`ERROR` / `HIGH` / `CRITICAL` は `svError`、`WARNING` / `MEDIUM` は `svWarning` に対応させる。`INFO` / `LOW` の受け皿が無いので、**決定（#6、2026-11-17）: `svInfo` を `svWarning` の前に追加する**（`--fail-on` に `info` が増える）。入れ子のブロック内の一致を一段下げる先として M2 で既に必要になる（#4、4.3節）
 
 **YAML をどう読むか。** 候補は4つある。
 
@@ -430,8 +430,8 @@ M0 の結果（2026-11-17）。freepascal.org の 3.2.2 向け FCL リファレ�
 |---|---|---|---|
 | **M0** 事前確認 | `RegExpr` の機能を freepascal.org と実機で確認。10章の未決事項のうち着手前に必要なものを決める | 小 | 判断結果を HANDOFF.md に記録 |
 | **M1** パターン中核 | 前処理（メタ変数、16 進の曖昧性エラー、式・引数・文の位置の ellipsis）、ラッパー、パターン IR、マッチャ（メタ変数の単一化、子の列の ellipsis、葉の比較、括弧なし呼び出し、`raise;`）。JSON ルールファイル、`pattern` 単体、`--rules`、メッセージ補間 | 1,500〜2,000 行 | DEFENSE-001 相当を宣言的ルールで書き、既存のサンプルで同じ結果になる |
-| **M2** 合成 | `patterns` / `pattern-either` / `pattern-not` / `pattern-inside` / `pattern-not-inside`、範囲演算、文の並びのパターン、`pattern-regex` / `pattern-not-regex` / `metavariable-regex`、`focus-metavariable`、診断の終了位置 | 1,000〜1,500 行 | 7.3節の差分テストが通る。fpc-source 全体でクラッシュなし |
-| **M3** 形式と範囲の拡張 | YAML サブセットのローダ、`metavariable-pattern`、宣言レベルのパターンと位置依存の ellipsis、`<... e ...>`、`$...ARGS`、`paths`、`options` のサブセット、`svInfo`、SARIF 出力 | 1,500〜2,000 行 | ルール作者向けドキュメントと互換性一覧を公開できる状態 |
+| **M2** 合成 | `patterns` / `pattern-either` / `pattern-not` / `pattern-inside` / `pattern-not-inside`、範囲演算、文の並びのパターン、`pattern-regex` / `pattern-not-regex` / `metavariable-regex`、`focus-metavariable`、診断の終了位置、`svInfo`（入れ子のブロック内の一致を一段下げる先） | 1,000〜1,500 行 | 7.3節の差分テストが通る。fpc-source 全体でクラッシュなし |
+| **M3** 形式と範囲の拡張 | YAML サブセットのローダ、`metavariable-pattern`、宣言レベルのパターンと位置依存の ellipsis、`<... e ...>`、`$...ARGS`、`paths`、`options` のサブセット、SARIF 出力 | 1,500〜2,000 行 | ルール作者向けドキュメントと互換性一覧を公開できる状態 |
 | **M4** 周辺 | `metavariable-comparison`（限定版）、`fix:` / `fix-regex` と `--fix`（既定は提案のみ）、ルールのテスト用注釈（`// ruleid:` / `// ok:`）、必要なら事前フィルタによる高速化 | 1,000〜1,500 行 | 同梱ルールを数本追加し、fpc-source で誤検知を実測 |
 | 対象外 | taint、join、ファイル間、型、定数伝播、SCA、extract、generic モード | — | — |
 
@@ -499,9 +499,9 @@ Linux と Windows の両方でビルドとテストを実行する（ルール7�
 1. ~~**方針そのもの**~~: **決着（2026-11-16）**。推奨案 (d) で進める
 2. ~~**本書の言語と配置**~~: **決着（2026-11-16）**。規約に揃え、英語版 `docs/OPENGREP_RULE_ENGINE_DESIGN.md` を正、本書を `_jp` とした
 3. ~~**`$ABC` 形式のメタ変数**~~: **決着（2026-11-17）**。既定は読み込みエラー。ルールごとの `options: { pascal_hex_dollar: true }` で 16 進リテラル扱い＋警告（4.2節）
-4. **`go_deeper_stmt` の既定**: 既定で無効にする案でよいか（opengrep と逆のはず）
+4. ~~**`go_deeper_stmt` の既定**~~: **決着（2026-11-17）**。既定で有効。入れ子のブロック内でだけ見つかった一致は重要度を一段下げて報告し、`options: { go_deeper_stmt: false }` で無効化できる（4.3節）
 5. **識別子に対する `metavariable-regex`**: 既定で大文字小文字を無視するか
-6. **`severity`**: `svInfo` を追加するか、`INFO` / `LOW` を読み込みエラーにするか
+6. ~~**`severity`**~~: **決着（2026-11-17）**。`svInfo` を追加する（#4 により M2 から必要）
 7. **YAML**: JSON 先行＋自作サブセットでよいか。libyaml の vendoring を選ぶか
 8. ~~**正規表現**~~: **決着（2026-11-17）**。`RegExpr` で始め、非対応構文は読み込みエラー。M2 着手時に再評価する（4.6節）
 9. **ルールの指定方法**: CLI の `--rules` のみか、`rawpaco.json` にもキーを足すか

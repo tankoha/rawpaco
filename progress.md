@@ -46,10 +46,10 @@ M1 着手前に決めたいもの（★）から順に並べる。決まった�
 | # | 項目 | 推奨案 | 決定 | 必要になる時期 |
 |---|---|---|---|---|
 | 3 ★ | `$ABC` 形式（16 進数字のみ）のメタ変数 | 読み込みエラー | **決定（2026-11-17）**: 既定は読み込みエラー。ルールごとの `options: { pascal_hex_dollar: true }` で 16 進リテラル扱い＋標準エラーに警告 | M1 |
-| 4 ★ | `go_deeper_stmt` の既定 | 無効（`options` で有効化） | 協議中: オーナー案「入れ子のブロックの中で見つかった一致はワーニング」。解釈と詳細を確認中 | M1〜M2 |
+| 4 ★ | `go_deeper_stmt` の既定 | 無効（`options` で有効化） | **決定（2026-11-17）**: 既定で有効。入れ子のブロック内でだけ見つかった正の一致は重要度を一段下げて報告（注記付き）。`options: { go_deeper_stmt: false }` で無効化 | M1〜M2 |
 | 8 ★ | 正規表現エンジン | `RegExpr` で開始（M0 の結果次第） | **決定（2026-11-17）**: `RegExpr` で開始。非対応構文は読み込みエラー（POSIX クラス等は自前で事前検査）。M2 着手時に再評価 | M0 で判断 |
 | 5 | 識別子に対する `metavariable-regex` の大文字小文字 | 未定（推奨なし） | 未 | M2 |
-| 6 | `severity` の `INFO` / `LOW` | `svInfo` を追加 | 未 | M3 |
+| 6 | `severity` の `INFO` / `LOW` | `svInfo` を追加 | **決定（2026-11-17）**: `svInfo` を追加（#4 の一段下げ先として M2 で必要） | M2 |
 | 7 | YAML | JSON 先行（M1）＋自作サブセット（M3） | 未 | M1（JSON は確定でよい） |
 | 9 | ルールの指定方法 | `--rules` のみで開始 | 未 | M1 |
 | 10 | `languages` の別名・`nosemgrep` | 未定 | 未 | M3 |
@@ -68,7 +68,7 @@ M1 着手前に決めたいもの（★）から順に並べる。決まった�
 - [x] 実機で確認: 先読み・後読み・名前付きグループ・`(?i)`・非貪欲・Unicode の扱い。結果を本ファイルと HANDOFF.md に記録→ v0.987。`(?i)`・非貪欲・`\b`・`(?:)`・後方参照は可。先読み・後読み・名前付きグループ・アトミック・所有的・`\p{}` は不可、`[[:alpha:]]` は黙って誤解釈、UTF-8 はバイト単位（表は設計書 4.6）
 - [x] `fcl-yaml` が FPC 3.2.2 に含まれないことの確認（含まれていれば設計書 4.6 の YAML 方針を見直す）
 - [x] 追加予定の TSBindings 関数（`ts_node_is_named` / `is_missing` / `is_extra` / `ts_node_eq` / `ts_node_symbol`）のシグネチャを `vendor/tree-sitter/include/tree_sitter/api.h` と照合
-- [~] ★の未決事項（#3, #4, #8）をオーナーに確認して決定
+- [x] ★の未決事項（#3, #4, #8）をオーナーに確認して決定 → 3 件とも決定。#4 に伴い #6 も決定
 
 ### M1 パターン中核（目安 1,500〜2,000 行）
 
@@ -88,7 +88,8 @@ M1 着手前に決めたいもの（★）から順に並べる。決まった�
 ### M2 合成（目安 1,000〜1,500 行）
 
 - [ ] `patterns` / `pattern-either` / `pattern-not` / `pattern-inside` / `pattern-not-inside` と範囲演算・束縛の両立判定
-- [ ] 文の並びのパターン（`block` / `statements` / `blockTr`、条件コンパイル指令をまたがない）
+- [ ] 文の並びのパターン（`block` / `statements` / `blockTr`、条件コンパイル指令をまたがない）。`go_deeper_stmt` は既定で有効、入れ子内だけの一致は重要度を一段下げる（#4）
+- [ ] `svInfo` を `svWarning` の前に追加し、`--fail-on=info` を受け付ける（#6）
 - [ ] `pattern-regex` / `pattern-not-regex` / `metavariable-regex`
 - [ ] `focus-metavariable`、`TDiagnostic` への終了位置追加
 - [ ] opengrep との差分テスト（regex 葉のみ、Linux CI の任意ジョブ、opengrep バージョン固定）
@@ -100,7 +101,7 @@ M1 着手前に決めたいもの（★）から順に並べる。決まった�
 - [ ] YAML サブセットローダ
 - [ ] `metavariable-pattern`、`<... e ...>`、`$...ARGS`
 - [ ] 宣言レベルのパターンと位置依存の ellipsis（クラス本体・仮引数）
-- [ ] `paths`、`options` のサブセット、`svInfo`（#6 の決定次第）
+- [ ] `paths`、`options` のサブセット
 - [ ] `--format=sarif`
 - [ ] ルール作者向けドキュメントと互換性一覧
 
@@ -128,5 +129,5 @@ M1 着手前に決めたいもの（★）から順に並べる。決まった�
 
 新しいものを上に追記する。1 エントリ: 日付 / 担当 / やったこと / 結果（テスト・CI）/ 次の一手。
 
-- 2026-11-17 / Opus（ローカル）: ローカル main を `claude/exciting-einstein-hw4zfz` に fast-forward。ベースライン（make / test / selflint）緑。M0 の確認 4 項目を完了。`RegExpr` 検証プログラムは Qwen（qwen3.8-27b-64k、ollama HTTP API。呼び出しは papimela の `tools/qwen-gen.bb` を `PAPIMELA_QWEN_MODEL` 指定で流用）に書かせ、レビュー 1 回で採用・実行した（リポジトリには入れていない）。#8 は決定、#3・#4 はオーナー案を受けて協議中。次の一手: #3・#4 を確定して設計書に反映 → M1 の最初のタスク（`src/Decl/` 作成と TSBindings への関数追加）の作業指示を書く
+- 2026-11-17 / Opus（ローカル）: ローカル main を `claude/exciting-einstein-hw4zfz` に fast-forward。ベースライン（make / test / selflint）緑。M0 の確認 4 項目を完了。`RegExpr` 検証プログラムは Qwen（qwen3.8-27b-64k、ollama HTTP API。呼び出しは papimela の `tools/qwen-gen.bb` を `PAPIMELA_QWEN_MODEL` 指定で流用）に書かせ、レビュー 1 回で採用・実行した（リポジトリには入れていない）。続けてオーナーと協議し、★の #3・#4・#8 と、#4 に伴い #6 を決定（設計書 英→日 に反映）。push は未実施。M0 完了。次の一手: M1 の最初のタスク（`src/Decl/` 作成と TSBindings への関数追加）の作業指示を書く
 - 2026-11-16 / Claude（クラウド）: 設計書を作成し、オーナーが案 (d) を採用。英語版を正とし `_jp` を併置。本ファイルを新規作成。実装は未着手。次の一手: ローカルセッションで M0 に着手
