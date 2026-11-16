@@ -18,6 +18,10 @@ uses
 function RunLint(const FileNames: array of string; OutFormat: TOutputFormat;
   MinFailSeverity: TSeverity): Integer;
 
+// 宣言的ルール層の開発者向けオプション（rawpaco.lpr の --match-pattern）でも
+// 同じ読み方をするために公開している。
+function ReadFileAsString(const FileName: string): AnsiString;
+
 implementation
 
 uses

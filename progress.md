@@ -77,7 +77,7 @@ M1 着手前に決めたいもの（★）から順に並べる。決まった�
 - [x] PatLexer: 文字列・コメントを読み飛ばすスキャナ。`$X` → `__rawpaco_mv_X__`、`$...X` → `__rawpaco_mvell_X__`、`...` → `__rawpaco_ell__`、16 進のみの名前はエラー → `src/Decl/PatLexer.pas`（Qwen）と単体テスト `tests/unit/TestPatLexer.lpr`（22 件、Qwen）。`pascal_hex_dollar`、`<...` の明示エラー、予約接頭辞 `__rawpaco_` のエラーも実装
 - [x] PatCompiler: ラッパー 3 段の試行（そのまま → `begin <P> end` → `begin __rawpaco_w__ := <P> end`）、パターン IR への変換、`ts_tree_delete` → `src/Decl/PatCompiler.pas`（interface は Opus、implementation は Qwen。差し戻し 1 回）。`exprParens` はパターン側で除去する。式だけの `statement` 1 個は式パターンにする。ellipsis だけのパターン・空のパターンは読み込みエラー
 - [x] パターン IR のダンプ機能とゴールデンテスト → 開発者向けオプション `--dump-pattern=FILE`（関数本体は Qwen）。`tests/decl/dump/*.pat` と `.expected` の 14 件を `run_tests.sh` で照合（期待値を壊すと落ちることを確認済み）
-- [ ] PatMatcher: 名前付きの子の比較、`comment` / `pp` の除外、葉の比較規則、メタ変数の単一化、子の列の ellipsis（バックトラック）、`exprParens` の透過
+- [~] PatMatcher: 名前付きの子の比較、`comment` / `pp` の除外、葉の比較規則、メタ変数の単一化、子の列の ellipsis（バックトラック）、`exprParens` の透過 → `src/Decl/PatMatcher.pas`（interface は Opus、implementation は Qwen。コンパイルエラー 2 点は Opus が修正）。`Foo()` に `exprArgs` が無いことへの対処（ellipsis だけの子を持つノードは「無い」にも一致）は Opus が追加。`$...X` の 2 回目以降はソーステキストの完全一致で比べる（M3 の `$...ARGS` で見直す）。開発者向けオプション `--match-pattern=PAT ファイル...`（関数本体は Qwen）と、`tests/decl/match/` のゴールデン 9 件
 - [ ] Pascal 固有: 文の位置の括弧なし呼び出し、`raise;` の専用ノード
 - [ ] JSON ルールローダ（`fpjson`）。未知キー・未対応機能キーはエラー（終了コード 2）
 - [ ] `IRawpacoRule` アダプタ（`InterestedNodeTypes = root`）と `--rules=<file|dir>`、ID 重複エラー、`--only` / `--exclude` との連携
@@ -128,6 +128,8 @@ M1 着手前に決めたいもの（★）から順に並べる。決まった�
 ## 6. 作業ログ
 
 新しいものを上に追記する。1 エントリ: 日付 / 担当 / やったこと / 結果（テスト・CI）/ 次の一手。
+
+- 2026-11-17 / Opus（ローカル）+ Qwen: PatMatcher。対象側の木を実測し、`pp` も `ERROR` も extras であることを確認した。そのため extras を飛ばすだけでは ERROR を見落とすので、照合の入口で `ts_node_has_error` を見る仕様にした。Qwen の実装は照合ロジック（バックトラック、`Copy` による束縛の退避、範囲束縛）が 1 回で正しかった。直したのはコンパイルエラー 2 点（本体のない前方宣言、`case` の分岐の `begin`/`end` 漏れ）と警告 1 点で、いずれも Opus が修正。ゴールデンテストで、`Foo()` には `exprArgs` が無いために `Foo(...)` が一致しないことを発見した。仕様の漏れなので Opus が規則を追加し、設計書 4.3 の表にも追記した。`try ... except end;` のパターンで空の except を検出でき、M1 の完了条件（DEFENSE-001 相当）の見通しが立った。`LintDriver.ReadFileAsString` を interface に公開した。結果: make / make test（単体 22 件、ダンプ 14 件、照合 9 件）/ make selflint 緑。次の一手: push して CI 確認 → Pascal 固有（括弧なしの呼び出し、`raise;`）→ JSON ルールローダ
 
 - 2026-11-17 / Opus（ローカル）+ Qwen: PatCompiler とパターン IR のダンプ。一時的なダンププログラム（`src/probe.lpr`、削除済み）で、ラッパーで包んだパターンの木の形を実測してから interface を書いた。このとき追加した TSBindings の 5 関数のリンクと動作も確認できた。Qwen の 1 回目は、木を消した後に TSNode を使う（解放済みの参照）、外側の変数の宣言順によるコンパイルエラー、`Wrapper` の設定漏れ、PAnsiChar の比較の問題があり、差し戻した。2 回目は指摘をすべて反映し、警告なしでコンパイルできた。`--dump-pattern` の関数は 1 回で採用（変数名 `Text` を `PatText` に変える修正のみ Opus）。ゴールデンテストを作る過程で 2 点を発見: (1) `$A`〜`$F` の 1 文字のメタ変数も #3 の決定どおりエラーになる（opengrep のルールでよく使う名前なので、M3 の互換性一覧に明記する）、(2) 文の位置の `...` は `;` が必要（M2 の文の並びのタスクに記録）。結果: make / make test（単体 22 件、ゴールデン 14 件）/ make selflint 緑。push 後の CI（run 43907990022）も Linux / Windows とも緑（Windows でもゴールデン 14 件通過）。次の一手: PatMatcher の interface と作業指示
 

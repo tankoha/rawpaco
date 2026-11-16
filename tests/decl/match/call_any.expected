@@ -1,0 +1,2 @@
+tests/decl/match/call_any.pas:3:3-3:8: Foo()
+tests/decl/match/call_any.pas:4:3-4:12: Foo(1, 2)

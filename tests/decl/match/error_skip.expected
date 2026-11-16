@@ -1,0 +1,2 @@
+tests/decl/match/error_skip.pas:4:3-4:26: B := TStringList.Create
+  $X = B

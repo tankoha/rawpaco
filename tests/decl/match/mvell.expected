@@ -1,0 +1,4 @@
+tests/decl/match/mvell.pas:3:3-3:12: Foo(1, 2)
+  $...ARGS = 1, 2
+tests/decl/match/mvell.pas:4:3-4:8: Foo()
+  $...ARGS = 

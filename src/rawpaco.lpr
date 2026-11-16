@@ -4,7 +4,7 @@ program rawpaco;
 
 uses
   SysUtils, Classes, TSBindings, LintDriver, RawpacoConfig, RuleRegistry, Diagnostics,
-  PatLexer, PatCompiler;
+  PatLexer, PatCompiler, PatMatcher;
 
 const
   VersionString = '0.0.1-dev';
@@ -84,6 +84,107 @@ begin
     Result := 2;
 end;
 
+// 開発者向けオプション: パターンがソース内のどこにマッチし、メタ変数に何が
+// バインドされたかを標準出力に表示する。マッチャのゴールデンテスト
+// (tests/decl/match) 用であり、JSON ルールローダー完成までの暫定手段。
+function RunMatchPattern(const PatPath: string; const Files: array of string): Integer;
+var
+  PatText: string;
+  R: TPatCompileResult;
+  Parser: TSParser;
+  F: string;
+  Source: string;
+  Tree: PTSTree;
+  Matches: TPatMatchArray;
+  MatchedText: string;
+  Prefix: string;
+  i, j, k: Integer;
+
+  function FirstLine(const S: string): string;
+  var
+    n: Integer;
+  begin
+    for n := 1 to Length(S) do
+    begin
+      if (S[n] = #13) or (S[n] = #10) then
+      begin
+        Result := Copy(S, 1, n - 1);
+        Exit;
+      end;
+    end;
+    Result := S;
+  end;
+
+begin
+  Result := 0;
+
+  if not FileExists(PatPath) then
+  begin
+    WriteLn(StdErr, 'error: pattern file not found: ', PatPath);
+    Result := 2;
+    Exit;
+  end;
+
+  PatText := ReadFileAsString(PatPath);
+  if (Length(PatText) >= 2) and (PatText[Length(PatText) - 1] = #13) and (PatText[Length(PatText)] = #10) then
+    Delete(PatText, Length(PatText) - 1, 2)
+  else if (Length(PatText) >= 1) and (PatText[Length(PatText)] = #10) then
+    Delete(PatText, Length(PatText), 1);
+
+  R := CompilePattern(PatText, DefaultPatLexOptions);
+  if not R.Ok then
+  begin
+    WriteLn(StdErr, 'error: ', R.ErrorMessage);
+    Result := 2;
+    Exit;
+  end;
+
+  try
+    Parser := ts_parser_new;
+    ts_parser_set_language(Parser, tree_sitter_pascal);
+    try
+      for i := 0 to High(Files) do
+      begin
+        F := Files[i];
+        if not FileExists(F) then
+        begin
+          WriteLn(StdErr, 'error: file not found: ', F);
+          Result := 2;
+          Continue;
+        end;
+
+        Source := ReadFileAsString(F);
+        Tree := ts_parser_parse_string(Parser, nil, PAnsiChar(Source), Length(Source));
+        try
+          Matches := FindMatches(R.Root, ts_tree_root_node(Tree), Source);
+          for j := 0 to High(Matches) do
+          begin
+            MatchedText := Copy(Source, Matches[j].StartByte + 1, Matches[j].EndByte - Matches[j].StartByte);
+            WriteLn(Format('%s:%d:%d-%d:%d: %s',
+              [F, Matches[j].StartPoint.row + 1, Matches[j].StartPoint.column + 1,
+               Matches[j].EndPoint.row + 1, Matches[j].EndPoint.column + 1,
+               FirstLine(MatchedText)]));
+            for k := 0 to High(Matches[j].Bindings) do
+            begin
+              if Matches[j].Bindings[k].IsRange then
+                Prefix := '  $...'
+              else
+                Prefix := '  $';
+              WriteLn(Prefix + Matches[j].Bindings[k].Name + ' = ' + FirstLine(BindingText(Matches[j].Bindings[k], Source)));
+            end;
+          end;
+        finally
+          ts_tree_delete(Tree);
+        end;
+      end;
+    finally
+      ts_parser_delete(Parser);
+    end;
+  finally
+    R.Root.Free;
+  end;
+end;
+
 var
   Parser: TSParser;
   Tree: PTSTree;
@@ -92,7 +193,7 @@ var
   Files: array of string;
   I: Integer;
   Arg, ConfigPath, ConfigError, FilterError, FormatError, FormatStr,
-    FailOnError, FailOnStr: string;
+    FailOnError, FailOnStr, MatchPath: string;
   OnlyIds, ExcludeIds: TStringArray;
   OutFormat: TOutputFormat;
   FailOnLevel: TSeverity;
@@ -140,10 +241,13 @@ begin
     SetLength(OnlyIds, 0);
     SetLength(ExcludeIds, 0);
     SetLength(Files, 0);
+    MatchPath := '';
     for I := 1 to ParamCount do
     begin
       Arg := ParamStr(I);
-      if Copy(Arg, 1, 15) = '--dump-pattern=' then
+      if Copy(Arg, 1, 16) = '--match-pattern=' then
+        MatchPath := Copy(Arg, 17, MaxInt)
+      else if Copy(Arg, 1, 15) = '--dump-pattern=' then
         Halt(RunDumpPattern(Copy(Arg, 16, MaxInt)))
       else if Copy(Arg, 1, 9) = '--config=' then
         ConfigPath := Copy(Arg, 10, Length(Arg))
@@ -186,6 +290,11 @@ begin
         Files[High(Files)] := Arg;
       end;
     end;
+
+    // 開発者向けの --match-pattern は lint 本体の設定やルールの絞り込みと無関係なので、
+    // それらの検証より前に分岐する。
+    if MatchPath <> '' then
+      Halt(RunMatchPattern(MatchPath, Files));
 
     if not InitConfig(ConfigPath, ConfigError) then
     begin

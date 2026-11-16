@@ -249,6 +249,24 @@ for pat in tests/decl/dump/*.pat; do
   fi
 done
 
+# マッチャのゴールデンテスト（同 7.1）。<名前>.pat を <名前>.pas に当て、一致した位置と
+# メタ変数の束縛の一覧を <名前>.expected と比べる。.pas には一致すべきコードと一致しては
+# いけないコードの両方を入れる（CLAUDE.md ルール3）。JSON ルールローダができるまでは
+# 開発者向けオプション --match-pattern で直接照合する。
+for pat in tests/decl/match/*.pat; do
+  [ -e "$pat" ] || continue
+  expected="${pat%.pat}.expected"
+  output="$("$RAWPACO" --match-pattern="$pat" "${pat%.pat}.pas" 2>&1)"; rc=$?
+  output="$(printf '%s\n' "$output" | tail -n +2 | tr -d '\r')"
+  if [ "$output" != "$(tr -d '\r' < "$expected")" ] || [ "$rc" != 0 ]; then
+    echo "FAIL: pattern match '$pat' (rc=$rc)"
+    diff <(tr -d '\r' < "$expected") <(printf '%s\n' "$output") | sed 's/^/  /'
+    FAIL=1
+  else
+    echo "ok:   pattern match '$pat'"
+  fi
+done
+
 if [ "$FAIL" -ne 0 ]; then
   echo "run_tests.sh: FAILURES DETECTED"
   exit 1

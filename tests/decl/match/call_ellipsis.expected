@@ -1,0 +1,6 @@
+tests/decl/match/call_ellipsis.pas:3:3-3:9: Foo(1)
+  $X = 1
+tests/decl/match/call_ellipsis.pas:4:3-4:15: Foo(1, 2, 3)
+  $X = 1
+tests/decl/match/call_ellipsis.pas:5:8-5:14: Foo(A)
+  $X = A

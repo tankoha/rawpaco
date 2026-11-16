@@ -1,0 +1,6 @@
+tests/decl/match/create_assign.pas:4:3-4:26: L := TStringList.Create
+  $X = L
+tests/decl/match/create_assign.pas:5:3-5:26: m := tstringlist.create
+  $X = m
+tests/decl/match/create_assign.pas:6:3-6:35: L := { note } TStringList.Create
+  $X = L

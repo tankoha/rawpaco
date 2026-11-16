@@ -1,0 +1,4 @@
+tests/decl/match/unify.pas:4:3-4:13: I := I + 1
+  $X = I
+tests/decl/match/unify.pas:5:3-5:15: i := (I) + 1
+  $X = i

@@ -324,7 +324,8 @@ Recursively match the pattern IR against a target `TSNode`; on success return `(
 |---|---|---|
 | Paren-less calls | `Foo;` is `statement` > `identifier`; `Foo();` is `statement` > `exprCall`; `X.Free;` is `statement` > `exprDot` | Patterns `Foo(...)` and `$X.Free(...)` also match the paren-less form **in statement position**. Not in expression position (`Y := Foo`), where it cannot be told apart from a variable reference |
 | Argument-less `raise;` | `ERROR` > `kRaise` (a grammar hole, known in HANDOFF.md) | Pattern-side `raise;` becomes a dedicated IR node matching a target "`ERROR` holding only `kRaise`". This `ERROR` shape is an exception to "never match subtrees containing errors" |
-| Parentheses | `(A)` is `exprParens` | Treated as transparent during matching |
+| Parentheses | `(A)` is `exprParens` | Treated as transparent during matching (removed from the pattern IR at compile time; skipped on the target side) |
+| Empty argument list | `Foo()` has no `exprArgs` node at all [Measured in M1] | A pattern node whose children are only ellipses (e.g. the `exprArgs` of `Foo(...)`) also matches when the target has no such child, as an empty sequence, so `Foo(...)` matches `Foo()` as in opengrep |
 | Conditional compilation | `{$IFDEF A} Foo; {$ELSE} Bar; {$ENDIF}` puts both branches in the same list | Statement ellipsis does not cross `pp` conditional directives |
 | `with` statements | A bare identifier in the body may be a record field | No special handling in the engine. Rule authors exclude via `pattern-not-inside`. Mandatory check item for bundled rules (measured as the largest false-positive source in HANDOFF.md) |
 | Macros | In `{$MACRO ON}` files identifiers can disappear via expansion | Same as above. Whether to allow a per-file exclusion condition in rule `options` is open |

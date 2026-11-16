@@ -1,0 +1,2 @@
+tests/decl/match/escaped_ident.pas:3:3-3:14: Foo(&begin)
+tests/decl/match/escaped_ident.pas:4:3-4:14: Foo(&BEGIN)

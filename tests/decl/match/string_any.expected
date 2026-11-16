@@ -1,0 +1,2 @@
+tests/decl/match/string_any.pas:3:3-3:23: ShowMessage('hello')
+tests/decl/match/string_any.pas:4:3-4:18: ShowMessage('')
