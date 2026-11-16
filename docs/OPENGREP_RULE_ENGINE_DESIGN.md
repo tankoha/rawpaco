@@ -368,7 +368,7 @@ The top level accepted is a `rules:` array. Per-rule keys: `id` / `message` / `s
 
 | Option | Description | Assessment |
 |---|---|---|
-| 1 | FPC's `fcl-yaml` (`fpyaml.parser` etc.) | Its presence in the freepascal.org daily (trunk) documentation was confirmed [Measured: web search]. Probably not in FPC 3.2.2 used by CI [Unverified]. There are bug reports. **Not usable for now** |
+| 1 | FPC's `fcl-yaml` (`fpyaml.parser` etc.) | Its presence in the freepascal.org daily (trunk) documentation was confirmed [Measured: web search]. Not in FPC 3.2.2 used by CI [Measured (M0): no such unit among the installed 3.2.2 units, only `fcl-json/json2yaml`; not listed in the 3.2.2-era FCL reference index]. There are bug reports. **Not usable for now** |
 | 2 | Vendor libyaml (C, MIT) under `vendor/` and call via cdecl | Same approach as tree-sitter. Rule 1 requires checking against `yaml.h`. Risk of fighting Windows linking again |
 | 3 | Write a YAML subset in FPC | Block mappings and sequences, plain and quoted scalars, `\|` and `>` block scalars, comments. Anchors, tags, complex flow forms are **explicit errors**. Estimated 500–800 lines |
 | 4 | Read JSON rule files with `fpjson` | `fpjson` is already a dependency (`RawpacoConfig.pas`), so nothing new. Multi-line patterns are awkward to write |
@@ -377,7 +377,19 @@ Recommendation: **start M1 with option 4 (JSON) and add option 3 (own subset) in
 
 Whichever option, FPC standard units and functions used must be confirmed in the freepascal.org documentation before implementation per CLAUDE.md rule 1. At the time of writing, only "`fcl-yaml` appears in the trunk documentation" has been confirmed.
 
-**Regular expressions.** opengrep uses PCRE2 [Source-checked: `libs/pcre2`]. Candidates are FPC's bundled `RegExpr` unit (`TRegExpr`) or vendoring PCRE2 under `vendor/`. The former adds no C dependency but has a different dialect. Whether the version in FPC 3.2.2 supports lookahead, lookbehind, and named groups is **unverified** and subject to rule 1. Recommendation: start with `RegExpr`, and make regexes using unsupported constructs load errors.
+**Regular expressions.** opengrep uses PCRE2 [Source-checked: `libs/pcre2`]. Candidates are FPC's bundled `RegExpr` unit (`TRegExpr`) or vendoring PCRE2 under `vendor/`. The former adds no C dependency but has a different dialect.
+
+M0 results (2026-11-17). The freepascal.org FCL reference for 3.2.2 does not document `RegExpr` and the wiki was offline, so per rule 1 the unit is **not confirmed on freepascal.org**; the facts below come from the installed unit (`regexpr.ppu`, `TRegExpr.VersionMajor/Minor` = 0.987) and a probe program [Measured]:
+
+| Construct | Result |
+|---|---|
+| `(?i)`, lazy `*?`, `\b`, `^` / `$`, `(?:...)`, `{n,}`, back-references `\1` | Works. Case-sensitive by default |
+| Lookahead / lookbehind `(?=` `(?!` `(?<=` `(?<!`, named groups `(?P<n>` `(?<n>` `(?'n'`, atomic `(?>` | Compile error ("unrecognized modifier") |
+| Possessive `a++`, Unicode property `\p{L}` | Compile error |
+| POSIX class `[[:alpha:]]` | **No error, silently misparsed** (`12abc` does not match) |
+| UTF-8 | Byte-oriented: `.`, `\w`, and `[é]` each match one byte, not one character |
+
+**Decision (#8, 2026-11-17): start with `RegExpr`.** Regexes with unsupported constructs are load errors. Because some unsupported constructs (POSIX classes) do not raise a compile error, the loader runs its own pre-check for them rather than relying on `ERegExpr`. Regexes are first used in M2; whether real-world rules need lookaround is re-evaluated at the start of M2 (alternatives: vendoring a newer Pascal `TRegExpr`, or PCRE2).
 
 ### 4.7 Integration with the Existing Rule Infrastructure
 
@@ -491,7 +503,7 @@ Build and test on both Linux and Windows (rule 7). Windows is a 32-bit build, so
 5. **`metavariable-regex` on identifiers**: case-insensitive by default?
 6. **`severity`**: add `svInfo`, or make `INFO` / `LOW` load errors?
 7. **YAML**: JSON first + own subset, or vendor libyaml?
-8. **Regex**: start with `RegExpr` (depends on M0 results)?
+8. ~~**Regex**~~: **Settled (2026-11-17).** Start with `RegExpr`; unsupported constructs are load errors; re-evaluate at the start of M2 (Section 4.6)
 9. **How rules are specified**: CLI `--rules` only, or also a key in `rawpaco.json`?
 10. **`languages` aliases**, **accepting `nosemgrep` comments**
 11. **Bundled declarative rules**: move some native rules to declarative rules, or keep only as double implementations for validation?
@@ -504,4 +516,4 @@ Build and test on both Linux and Windows (rule 7). Windows is a 32-bit build, so
 - rawpaco: read `CLAUDE.md`, `HANDOFF.md`, main units under `src/`, `Makefile`, CI configuration, `LICENSE`. `fpc` is not available in this environment, so **rawpaco itself was not built or tested**
 - tree-sitter-pascal: checked parse results of about 60 code fragments with a small verification program built with gcc from `lib.c` and `parser.c` under `vendor/` (in a scratchpad, not in the repository). The [Measured] items in Sections 4.2 and 4.3 come from this
 - opengrep: fetched the public repository and checked the license, the supported-language list, line counts per directory, `Rule.ml` / `Xpattern.ml` / `Xlang.ml` / `Range_with_metavars.ml`, and relevant parts of `Match_search_mode.ml` / `Generic_vs_generic.ml` / `Parse_rule.ml`. **opengrep was not built or run.** Statements about behavior come from reading the source and prior knowledge
-- FPC `fcl-yaml`: confirmed by web search that it appears in the freepascal.org daily documentation. Its absence from FPC 3.2.2 and the capabilities of `RegExpr` were not checked
+- FPC `fcl-yaml`: confirmed by web search that it appears in the freepascal.org daily documentation. Its absence from FPC 3.2.2 and the capabilities of `RegExpr` were not checked at design time; both were checked in M0 (Section 4.6)

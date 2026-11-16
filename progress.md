@@ -45,9 +45,9 @@ M1 着手前に決めたいもの（★）から順に並べる。決まった�
 
 | # | 項目 | 推奨案 | 決定 | 必要になる時期 |
 |---|---|---|---|---|
-| 3 ★ | `$ABC` 形式（16 進数字のみ）のメタ変数 | 読み込みエラー | 未 | M1 |
-| 4 ★ | `go_deeper_stmt` の既定 | 無効（`options` で有効化） | 未 | M1〜M2 |
-| 8 ★ | 正規表現エンジン | `RegExpr` で開始（M0 の結果次第） | 未 | M0 で判断 |
+| 3 ★ | `$ABC` 形式（16 進数字のみ）のメタ変数 | 読み込みエラー | 協議中: オーナー案「既定はエラー、Pascal 字句に忠実なモードでは 16 進リテラル扱い＋警告」。モードの指定方法を確認中 | M1 |
+| 4 ★ | `go_deeper_stmt` の既定 | 無効（`options` で有効化） | 協議中: オーナー案「既定は有効、`options` で無効化」。懸念点を回答済み、決定待ち | M1〜M2 |
+| 8 ★ | 正規表現エンジン | `RegExpr` で開始（M0 の結果次第） | **決定（2026-11-17）**: `RegExpr` で開始。非対応構文は読み込みエラー（POSIX クラス等は自前で事前検査）。M2 着手時に再評価 | M0 で判断 |
 | 5 | 識別子に対する `metavariable-regex` の大文字小文字 | 未定（推奨なし） | 未 | M2 |
 | 6 | `severity` の `INFO` / `LOW` | `svInfo` を追加 | 未 | M3 |
 | 7 | YAML | JSON 先行（M1）＋自作サブセット（M3） | 未 | M1（JSON は確定でよい） |
@@ -64,11 +64,11 @@ M1 着手前に決めたいもの（★）から順に並べる。決まった�
 
 ### M0 事前確認
 
-- [ ] FPC 3.2.2 同梱 `RegExpr`（`TRegExpr`）の存在と機能範囲を freepascal.org で確認（CLAUDE.md ルール1）
-- [ ] 実機で確認: 先読み・後読み・名前付きグループ・`(?i)`・非貪欲・Unicode の扱い。結果を本ファイルと HANDOFF.md に記録
-- [ ] `fcl-yaml` が FPC 3.2.2 に含まれないことの確認（含まれていれば設計書 4.6 の YAML 方針を見直す）
-- [ ] 追加予定の TSBindings 関数（`ts_node_is_named` / `is_missing` / `is_extra` / `ts_node_eq` / `ts_node_symbol`）のシグネチャを `vendor/tree-sitter/include/tree_sitter/api.h` と照合
-- [ ] ★の未決事項（#3, #4, #8）をオーナーに確認して決定
+- [x] FPC 3.2.2 同梱 `RegExpr`（`TRegExpr`）の存在と機能範囲を freepascal.org で確認（CLAUDE.md ルール1）→ freepascal.org には記載なし（3.2.2 の FCL リファレンスに無く wiki は停止中）。未確認である旨を設計書 4.6・HANDOFF.md に明記し、実機確認で代える
+- [x] 実機で確認: 先読み・後読み・名前付きグループ・`(?i)`・非貪欲・Unicode の扱い。結果を本ファイルと HANDOFF.md に記録→ v0.987。`(?i)`・非貪欲・`\b`・`(?:)`・後方参照は可。先読み・後読み・名前付きグループ・アトミック・所有的・`\p{}` は不可、`[[:alpha:]]` は黙って誤解釈、UTF-8 はバイト単位（表は設計書 4.6）
+- [x] `fcl-yaml` が FPC 3.2.2 に含まれないことの確認（含まれていれば設計書 4.6 の YAML 方針を見直す）
+- [x] 追加予定の TSBindings 関数（`ts_node_is_named` / `is_missing` / `is_extra` / `ts_node_eq` / `ts_node_symbol`）のシグネチャを `vendor/tree-sitter/include/tree_sitter/api.h` と照合
+- [~] ★の未決事項（#3, #4, #8）をオーナーに確認して決定
 
 ### M1 パターン中核（目安 1,500〜2,000 行）
 
@@ -128,4 +128,5 @@ M1 着手前に決めたいもの（★）から順に並べる。決まった�
 
 新しいものを上に追記する。1 エントリ: 日付 / 担当 / やったこと / 結果（テスト・CI）/ 次の一手。
 
+- 2026-11-17 / Opus（ローカル）: ローカル main を `claude/exciting-einstein-hw4zfz` に fast-forward。ベースライン（make / test / selflint）緑。M0 の確認 4 項目を完了。`RegExpr` 検証プログラムは Qwen（qwen3.8-27b-64k、ollama HTTP API。呼び出しは papimela の `tools/qwen-gen.bb` を `PAPIMELA_QWEN_MODEL` 指定で流用）に書かせ、レビュー 1 回で採用・実行した（リポジトリには入れていない）。#8 は決定、#3・#4 はオーナー案を受けて協議中。次の一手: #3・#4 を確定して設計書に反映 → M1 の最初のタスク（`src/Decl/` 作成と TSBindings への関数追加）の作業指示を書く
 - 2026-11-16 / Claude（クラウド）: 設計書を作成し、オーナーが案 (d) を採用。英語版を正とし `_jp` を併置。本ファイルを新規作成。実装は未着手。次の一手: ローカルセッションで M0 に着手

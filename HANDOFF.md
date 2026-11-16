@@ -225,11 +225,15 @@ mORMot2（`mormot.core.*`）と Horse（`Horse.*`）を扱うために必要だ�
 
 AST ダンププログラム（`ts_node_string` ではなくフィールド名付きのインデント出力）を `src/probe.lpr` として一時的に作って検証し、削除済み。`TSBindings.pas` の `{$L ../build/*.o}` が相対パスなので、再作成する場合も `src/` 直下に置く必要がある。
 
-## opengrep 互換の宣言的ルール層（2026-11-16 方針決定。未着手）
+## opengrep 互換の宣言的ルール層（2026-11-16 方針決定。M0 実施中）
 
 - 検討と設計は `docs/OPENGREP_RULE_ENGINE_DESIGN.md`（英語・正）/ `_jp.md`。opengrep 本体の取り込み（リンク・外部プロセス・全再実装）は不採用。検索モードのサブセットを FPC で再実装し、tree-sitter-pascal の CST 上で動かす案 (d) をオーナーが採用した
 - タスクの状態・作業ログ・未決事項の決定状況は `progress.md` で管理する（体制: ローカルの Opus が管制・レビュー、ローカルの Qwen が実装）。次の着手は M0。M1〜M2 の後に続行可否を判断する区切りがある
-- 未決事項は設計書 10章の 3〜12（`$ABC` 形式のメタ変数をエラーにするか、`svInfo` 追加など）。M0 の中で必要なものから決める
+- 未決事項は設計書 10章の 3〜12（`$ABC` 形式のメタ変数をエラーにするか、`svInfo` 追加など）。M0 の中で必要なものから決める。#8（正規表現）は `RegExpr` で決着
+- M0 の判断結果（2026-11-17）:
+  - `RegExpr` は **freepascal.org で未確認**（3.2.2 の FCL リファレンスに載っておらず、wiki は停止中）。CLAUDE.md ルール1 の例外として、機能範囲は実機（v0.987）で確認した。先読み・後読み・名前付きグループ・アトミック・所有的量指定子・`\p{}` は非対応、`[[:alpha:]]` は黙って誤解釈、UTF-8 はバイト単位。詳細は設計書 4.6節
+  - `fcl-yaml` は FPC 3.2.2 に含まれない（実機確認）。YAML は設計書どおり JSON 先行＋自作サブセット
+  - TSBindings に足す `ts_node_is_named` / `is_missing` / `is_extra`（`bool`）、`ts_node_eq(TSNode, TSNode)`（`bool`）、`ts_node_symbol`（`TSSymbol` = `uint16_t` → `Word`）は `api.h` と照合済み
 - 設計書の【実測】は vendor のソースを gcc でビルドした検証プログラムによるもので、rawpaco 本体（fpc）でのビルド・テストは未実施
 
 ## 次セッションの予定アクション（2026-09-28 時点）
