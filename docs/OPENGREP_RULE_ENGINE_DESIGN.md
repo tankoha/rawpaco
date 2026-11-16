@@ -254,7 +254,7 @@ In Pascal `$FF` is a hexadecimal literal, so metavariables cannot go through the
 
 - `$` followed by a name starting with an uppercase letter or underscore → metavariable. Replace with identifier `__rawpaco_mv_<name>__`
 - `$` followed by a digit-led sequence → hexadecimal literal. Leave as-is (writing `$0FF` always means hexadecimal)
-- **Names made only of hexadecimal digits (`A`–`F` and digits), such as `$ABC` or `$FACE` → ambiguous, so a load error.** The message suggests renaming to `$X` or writing `$0ABC`
+- **Names made only of hexadecimal digits (`A`–`F` and digits), such as `$ABC` or `$FACE` → ambiguous, so a load error.** The message suggests renaming to `$X` or writing `$0ABC`. **Decided (#3, 2026-11-17):** a rule may set the rawpaco-specific option `options: { pascal_hex_dollar: true }`; in that rule such names are kept as hexadecimal literals (faithful to Pascal lexing) and the loader prints a one-line warning to stderr for each one instead of failing
 
 The third rule is incompatible with opengrep (where `$A` and `$E` are ordinary metavariable names). Guessing either way would silently run a rule with a different meaning, so it is an error.
 
@@ -498,7 +498,7 @@ Build and test on both Linux and Windows (rule 7). Windows is a 32-bit build, so
 
 1. ~~**Overall direction**~~: **Settled (2026-11-16).** Proceed with option (d)
 2. ~~**Language and location of this document**~~: **Settled (2026-11-16).** Follows the convention: this English file is canonical, the Japanese one is `_jp`
-3. **`$ABC`-style metavariables**: is making them an error acceptable (incompatible with opengrep)?
+3. ~~**`$ABC`-style metavariables**~~: **Settled (2026-11-17).** Load error by default; per-rule `options: { pascal_hex_dollar: true }` treats them as hex literals with a warning (Section 4.2)
 4. **Default for `go_deeper_stmt`**: is off-by-default acceptable (probably opposite to opengrep)?
 5. **`metavariable-regex` on identifiers**: case-insensitive by default?
 6. **`severity`**: add `svInfo`, or make `INFO` / `LOW` load errors?
