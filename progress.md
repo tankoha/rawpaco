@@ -72,9 +72,9 @@ M1 着手前に決めたいもの（★）から順に並べる。決まった�
 
 ### M1 パターン中核（目安 1,500〜2,000 行）
 
-- [~] `src/Decl/` を作成し、`Makefile`（`-Fu`、`RULE_SOURCES`）と Windows CI（`.github/workflows/ci.yml` の `fpc` 呼び出し）に追加 → `-Fusrc/Decl`、自己 lint 対象、clean、単体テスト（`make unittest` / Windows CI の専用ステップ）を追加。`RULE_SOURCES` への追加は rawpaco 本体が Decl のユニットを使い始めるタスクで行う。Windows CI は push 後に確認
-- [~] TSBindings に M0 で照合した関数を追加 → 5 関数を追加（Qwen）。`build/tree-sitter.o` にシンボルがあることは `nm` で確認済み。まだ呼び出し元が無いので、リンクでの確認は PatCompiler のタスクで行う
-- [~] PatLexer: 文字列・コメントを読み飛ばすスキャナ。`$X` → `__rawpaco_mv_X__`、`$...X` → `__rawpaco_mvell_X__`、`...` → `__rawpaco_ell__`、16 進のみの名前はエラー → `src/Decl/PatLexer.pas`（Qwen）と単体テスト `tests/unit/TestPatLexer.lpr`（22 件、Qwen）。`pascal_hex_dollar`、`<...` の明示エラー、予約接頭辞 `__rawpaco_` のエラーも実装
+- [x] `src/Decl/` を作成し、`Makefile`（`-Fu`、`RULE_SOURCES`）と Windows CI（`.github/workflows/ci.yml` の `fpc` 呼び出し）に追加 → `-Fusrc/Decl`、自己 lint 対象、clean、単体テスト（`make unittest` / Windows CI の専用ステップ）を追加。`RULE_SOURCES` への追加は rawpaco 本体が Decl のユニットを使い始めるタスクで行う。Linux / Windows CI 緑（run 43902463083）
+- [x] TSBindings に M0 で照合した関数を追加 → 5 関数を追加（Qwen）。`build/tree-sitter.o` にシンボルがあることは `nm` で確認済み。まだ呼び出し元が無いので、リンクでの確認は PatCompiler のタスクで行う
+- [x] PatLexer: 文字列・コメントを読み飛ばすスキャナ。`$X` → `__rawpaco_mv_X__`、`$...X` → `__rawpaco_mvell_X__`、`...` → `__rawpaco_ell__`、16 進のみの名前はエラー → `src/Decl/PatLexer.pas`（Qwen）と単体テスト `tests/unit/TestPatLexer.lpr`（22 件、Qwen）。`pascal_hex_dollar`、`<...` の明示エラー、予約接頭辞 `__rawpaco_` のエラーも実装
 - [ ] PatCompiler: ラッパー 3 段の試行（そのまま → `begin <P> end` → `begin __rawpaco_w__ := <P> end`）、パターン IR への変換、`ts_tree_delete`
 - [ ] パターン IR のダンプ機能とゴールデンテスト
 - [ ] PatMatcher: 名前付きの子の比較、`comment` / `pp` の除外、葉の比較規則、メタ変数の単一化、子の列の ellipsis（バックトラック）、`exprParens` の透過
@@ -129,7 +129,7 @@ M1 着手前に決めたいもの（★）から順に並べる。決まった�
 
 新しいものを上に追記する。1 エントリ: 日付 / 担当 / やったこと / 結果（テスト・CI）/ 次の一手。
 
-- 2026-11-17 / Opus（ローカル）+ Qwen: M1 の最初の 3 タスク。PatLexer は interface を Opus、implementation を Qwen が担当。1 回目は papimela の qwen-gen.bb（`num_ctx` 16384）を使い、出力が途中で切れた。単引用符の文字定数の誤記と、開いた配列引数への `SetLength` もあった。→ interface を `TStringArray` に直し、`num_ctx` 65536 で途中切れを検出する `tools/qwen-gen.bb` を新設して再依頼。2 回目はレビューで機械的な修正を Opus が直接入れた（`Char` 引数、関数末尾の `end.`、変数名 `Out`、`(*)` の誤認、理由コメント）。単体テストで、Opus の `(*)` 修正の誤りと、テスト期待値の誤り（`$FF` は仕様上エラー）が見つかり修正。TSBindings の 5 宣言は Qwen が 1 回で正解。結果: make / make test（単体テスト 22 件含む）/ make selflint 緑。Windows CI は push 後に確認。次の一手: push して CI 確認 → PatCompiler（ラッパー 3 段の試行とパターン IR）の interface と作業指示
+- 2026-11-17 / Opus（ローカル）+ Qwen: M1 の最初の 3 タスク。PatLexer は interface を Opus、implementation を Qwen が担当。1 回目は papimela の qwen-gen.bb（`num_ctx` 16384）を使い、出力が途中で切れた。単引用符の文字定数の誤記と、開いた配列引数への `SetLength` もあった。→ interface を `TStringArray` に直し、`num_ctx` 65536 で途中切れを検出する `tools/qwen-gen.bb` を新設して再依頼。2 回目はレビューで機械的な修正を Opus が直接入れた（`Char` 引数、関数末尾の `end.`、変数名 `Out`、`(*)` の誤認、理由コメント）。単体テストで、Opus の `(*)` 修正の誤りと、テスト期待値の誤り（`$FF` は仕様上エラー）が見つかり修正。TSBindings の 5 宣言は Qwen が 1 回で正解。結果: make / make test（単体テスト 22 件含む）/ make selflint 緑。push 後の CI（run 43902463083）も Linux / Windows とも緑。次の一手: push して CI 確認 → PatCompiler（ラッパー 3 段の試行とパターン IR）の interface と作業指示
 
 - 2026-11-17 / Opus（ローカル）: ローカル main を `claude/exciting-einstein-hw4zfz` に fast-forward。ベースライン（make / test / selflint）緑。M0 の確認 4 項目を完了。`RegExpr` 検証プログラムは Qwen（qwen3.8-27b-64k、ollama HTTP API。呼び出しは papimela の `tools/qwen-gen.bb` を `PAPIMELA_QWEN_MODEL` 指定で流用）に書かせ、レビュー 1 回で採用・実行した（リポジトリには入れていない）。続けてオーナーと協議し、★の #3・#4・#8 と、#4 に伴い #6 を決定（設計書 英→日 に反映）。push は未実施。M0 完了。次の一手: M1 の最初のタスク（`src/Decl/` 作成と TSBindings への関数追加）の作業指示を書く
 - 2026-11-16 / Claude（クラウド）: 設計書を作成し、オーナーが案 (d) を採用。英語版を正とし `_jp` を併置。本ファイルを新規作成。実装は未着手。次の一手: ローカルセッションで M0 に着手
