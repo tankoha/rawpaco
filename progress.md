@@ -75,8 +75,8 @@ M1 着手前に決めたいもの（★）から順に並べる。決まった�
 - [x] `src/Decl/` を作成し、`Makefile`（`-Fu`、`RULE_SOURCES`）と Windows CI（`.github/workflows/ci.yml` の `fpc` 呼び出し）に追加 → `-Fusrc/Decl`、自己 lint 対象、clean、単体テスト（`make unittest` / Windows CI の専用ステップ）を追加。`RULE_SOURCES` への追加は rawpaco 本体が Decl のユニットを使い始めるタスクで行う。Linux / Windows CI 緑（run 43902463083）
 - [x] TSBindings に M0 で照合した関数を追加 → 5 関数を追加（Qwen）。`build/tree-sitter.o` にシンボルがあることは `nm` で確認済み。まだ呼び出し元が無いので、リンクでの確認は PatCompiler のタスクで行う
 - [x] PatLexer: 文字列・コメントを読み飛ばすスキャナ。`$X` → `__rawpaco_mv_X__`、`$...X` → `__rawpaco_mvell_X__`、`...` → `__rawpaco_ell__`、16 進のみの名前はエラー → `src/Decl/PatLexer.pas`（Qwen）と単体テスト `tests/unit/TestPatLexer.lpr`（22 件、Qwen）。`pascal_hex_dollar`、`<...` の明示エラー、予約接頭辞 `__rawpaco_` のエラーも実装
-- [~] PatCompiler: ラッパー 3 段の試行（そのまま → `begin <P> end` → `begin __rawpaco_w__ := <P> end`）、パターン IR への変換、`ts_tree_delete` → `src/Decl/PatCompiler.pas`（interface は Opus、implementation は Qwen。差し戻し 1 回）。`exprParens` はパターン側で除去する。式だけの `statement` 1 個は式パターンにする。ellipsis だけのパターン・空のパターンは読み込みエラー
-- [~] パターン IR のダンプ機能とゴールデンテスト → 開発者向けオプション `--dump-pattern=FILE`（関数本体は Qwen）。`tests/decl/dump/*.pat` と `.expected` の 14 件を `run_tests.sh` で照合（期待値を壊すと落ちることを確認済み）
+- [x] PatCompiler: ラッパー 3 段の試行（そのまま → `begin <P> end` → `begin __rawpaco_w__ := <P> end`）、パターン IR への変換、`ts_tree_delete` → `src/Decl/PatCompiler.pas`（interface は Opus、implementation は Qwen。差し戻し 1 回）。`exprParens` はパターン側で除去する。式だけの `statement` 1 個は式パターンにする。ellipsis だけのパターン・空のパターンは読み込みエラー
+- [x] パターン IR のダンプ機能とゴールデンテスト → 開発者向けオプション `--dump-pattern=FILE`（関数本体は Qwen）。`tests/decl/dump/*.pat` と `.expected` の 14 件を `run_tests.sh` で照合（期待値を壊すと落ちることを確認済み）
 - [ ] PatMatcher: 名前付きの子の比較、`comment` / `pp` の除外、葉の比較規則、メタ変数の単一化、子の列の ellipsis（バックトラック）、`exprParens` の透過
 - [ ] Pascal 固有: 文の位置の括弧なし呼び出し、`raise;` の専用ノード
 - [ ] JSON ルールローダ（`fpjson`）。未知キー・未対応機能キーはエラー（終了コード 2）
@@ -129,7 +129,7 @@ M1 着手前に決めたいもの（★）から順に並べる。決まった�
 
 新しいものを上に追記する。1 エントリ: 日付 / 担当 / やったこと / 結果（テスト・CI）/ 次の一手。
 
-- 2026-11-17 / Opus（ローカル）+ Qwen: PatCompiler とパターン IR のダンプ。一時的なダンププログラム（`src/probe.lpr`、削除済み）で、ラッパーで包んだパターンの木の形を実測してから interface を書いた。このとき追加した TSBindings の 5 関数のリンクと動作も確認できた。Qwen の 1 回目は、木を消した後に TSNode を使う（解放済みの参照）、外側の変数の宣言順によるコンパイルエラー、`Wrapper` の設定漏れ、PAnsiChar の比較の問題があり、差し戻した。2 回目は指摘をすべて反映し、警告なしでコンパイルできた。`--dump-pattern` の関数は 1 回で採用（変数名 `Text` を `PatText` に変える修正のみ Opus）。ゴールデンテストを作る過程で 2 点を発見: (1) `$A`〜`$F` の 1 文字のメタ変数も #3 の決定どおりエラーになる（opengrep のルールでよく使う名前なので、M3 の互換性一覧に明記する）、(2) 文の位置の `...` は `;` が必要（M2 の文の並びのタスクに記録）。結果: make / make test（単体 22 件、ゴールデン 14 件）/ make selflint 緑。次の一手: push して CI 確認 → PatMatcher の interface と作業指示
+- 2026-11-17 / Opus（ローカル）+ Qwen: PatCompiler とパターン IR のダンプ。一時的なダンププログラム（`src/probe.lpr`、削除済み）で、ラッパーで包んだパターンの木の形を実測してから interface を書いた。このとき追加した TSBindings の 5 関数のリンクと動作も確認できた。Qwen の 1 回目は、木を消した後に TSNode を使う（解放済みの参照）、外側の変数の宣言順によるコンパイルエラー、`Wrapper` の設定漏れ、PAnsiChar の比較の問題があり、差し戻した。2 回目は指摘をすべて反映し、警告なしでコンパイルできた。`--dump-pattern` の関数は 1 回で採用（変数名 `Text` を `PatText` に変える修正のみ Opus）。ゴールデンテストを作る過程で 2 点を発見: (1) `$A`〜`$F` の 1 文字のメタ変数も #3 の決定どおりエラーになる（opengrep のルールでよく使う名前なので、M3 の互換性一覧に明記する）、(2) 文の位置の `...` は `;` が必要（M2 の文の並びのタスクに記録）。結果: make / make test（単体 22 件、ゴールデン 14 件）/ make selflint 緑。push 後の CI（run 43907990022）も Linux / Windows とも緑（Windows でもゴールデン 14 件通過）。次の一手: PatMatcher の interface と作業指示
 
 - 2026-11-17 / Opus（ローカル）+ Qwen: M1 の最初の 3 タスク。PatLexer は interface を Opus、implementation を Qwen が担当。1 回目は papimela の qwen-gen.bb（`num_ctx` 16384）を使い、出力が途中で切れた。単引用符の文字定数の誤記と、開いた配列引数への `SetLength` もあった。→ interface を `TStringArray` に直し、`num_ctx` 65536 で途中切れを検出する `tools/qwen-gen.bb` を新設して再依頼。2 回目はレビューで機械的な修正を Opus が直接入れた（`Char` 引数、関数末尾の `end.`、変数名 `Out`、`(*)` の誤認、理由コメント）。単体テストで、Opus の `(*)` 修正の誤りと、テスト期待値の誤り（`$FF` は仕様上エラー）が見つかり修正。TSBindings の 5 宣言は Qwen が 1 回で正解。結果: make / make test（単体テスト 22 件含む）/ make selflint 緑。push 後の CI（run 43902463083）も Linux / Windows とも緑。次の一手: push して CI 確認 → PatCompiler（ラッパー 3 段の試行とパターン IR）の interface と作業指示
 
