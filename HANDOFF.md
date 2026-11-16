@@ -225,7 +225,7 @@ mORMot2（`mormot.core.*`）と Horse（`Horse.*`）を扱うために必要だ�
 
 AST ダンププログラム（`ts_node_string` ではなくフィールド名付きのインデント出力）を `src/probe.lpr` として一時的に作って検証し、削除済み。`TSBindings.pas` の `{$L ../build/*.o}` が相対パスなので、再作成する場合も `src/` 直下に置く必要がある。
 
-## opengrep 互換の宣言的ルール層（2026-11-16 方針決定。M0 実施中）
+## opengrep 互換の宣言的ルール層（2026-11-16 方針決定。M1 実施中、進捗は progress.md）
 
 - 検討と設計は `docs/OPENGREP_RULE_ENGINE_DESIGN.md`（英語・正）/ `_jp.md`。opengrep 本体の取り込み（リンク・外部プロセス・全再実装）は不採用。検索モードのサブセットを FPC で再実装し、tree-sitter-pascal の CST 上で動かす案 (d) をオーナーが採用した
 - タスクの状態・作業ログ・未決事項の決定状況は `progress.md` で管理する（体制: ローカルの Opus が管制・レビュー、ローカルの Qwen が実装）。次の着手は M0。M1〜M2 の後に続行可否を判断する区切りがある
