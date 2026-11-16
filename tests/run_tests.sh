@@ -230,6 +230,25 @@ vendor_data_case() {
 vendor_data_case 'vendor symbol file makes its units known (judgment B applies)' yes yes 1
 vendor_data_case 'without it the unit is unknown and judgment B is disabled'      no  no  0
 
+# 宣言的ルール層のパターン IR のゴールデンテスト（docs/OPENGREP_RULE_ENGINE_DESIGN.md 7.1）。
+# tree-sitter-pascal を更新したときにパターンの木の形が変わったことを差分で検出する
+# （CLAUDE.md ルール2）。1 行目はバージョン表示なので除き、Windows の CRLF も落として比べる。
+# 期待値が `error:` で始まるものは読み込みエラー（終了コード 2）、それ以外は 0 を期待する。
+for pat in tests/decl/dump/*.pat; do
+  [ -e "$pat" ] || continue
+  expected="${pat%.pat}.expected"
+  output="$("$RAWPACO" --dump-pattern="$pat" 2>&1)"; rc=$?
+  output="$(printf '%s\n' "$output" | tail -n +2 | tr -d '\r')"
+  if head -n 1 "$expected" | grep -q '^error:'; then want_rc=2; else want_rc=0; fi
+  if [ "$output" != "$(tr -d '\r' < "$expected")" ] || [ "$rc" != "$want_rc" ]; then
+    echo "FAIL: pattern dump '$pat' (rc=$rc, want $want_rc)"
+    diff <(tr -d '\r' < "$expected") <(printf '%s\n' "$output") | sed 's/^/  /'
+    FAIL=1
+  else
+    echo "ok:   pattern dump '$pat'"
+  fi
+done
+
 if [ "$FAIL" -ne 0 ]; then
   echo "run_tests.sh: FAILURES DETECTED"
   exit 1

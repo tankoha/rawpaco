@@ -269,6 +269,7 @@ Pascal では `$FF` が 16 進リテラルなので、メタ変数をそのま�
 | `begin Foo(MV_X, MV_ELL); end` | エラーなし。`exprArgs` の子として `identifier` が2つ |
 | `begin try MV_ELL; except end; end` | エラーなし。`statements` > `statement` > `identifier` |
 | `begin MV_X := TStringList.Create; MV_ELL; MV_X.Free; end` | エラーなし |
+| `begin MV_X := TStringList.Create; MV_ELL MV_X.Free; end`（ellipsis の後に `;` なし） | `ERROR`【M1 で実測】 |
 
 `...` を識別子 `__rawpaco_ell__` に置換すれば、引数の位置と文の位置ではパースできる。`$...ARGS` は `__rawpaco_mvell_ARGS__` に置換する。
 

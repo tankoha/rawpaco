@@ -1,0 +1,8 @@
+wrapper: statement
+assignment
+  lhs: $X
+  operator: kAssign ":="
+  rhs: exprDot
+    lhs: identifier "TStringList"
+    operator: kDot "."
+    rhs: identifier "Create"

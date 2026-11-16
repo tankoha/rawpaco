@@ -1,0 +1,5 @@
+wrapper: statement
+exprBinary
+  lhs: $L
+  operator: kAdd "+"
+  rhs: $R

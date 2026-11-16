@@ -1,0 +1,9 @@
+wrapper: as-is
+defProc
+  header: declProc
+    kProcedure "procedure"
+    name: $P
+  body: block
+    kBegin "begin"
+    ...
+    kEnd "end"

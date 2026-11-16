@@ -1,0 +1,4 @@
+procedure $P;
+begin
+  ...;
+end;

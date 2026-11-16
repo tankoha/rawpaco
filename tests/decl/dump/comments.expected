@@ -1,0 +1,5 @@
+wrapper: statement
+exprCall
+  entity: identifier "Foo"
+  args: exprArgs
+    $X

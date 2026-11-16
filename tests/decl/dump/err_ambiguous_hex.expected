@@ -1,0 +1,1 @@
+error: 1:1: `$ABC` is ambiguous: it reads as both a metavariable and a hexadecimal literal; rename it (e.g. `$X`) or write the literal as `$0ABC`

@@ -1,0 +1,1 @@
+Foo({ note } $X) // trailing

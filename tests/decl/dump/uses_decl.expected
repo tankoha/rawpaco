@@ -1,0 +1,5 @@
+wrapper: as-is
+declUses
+  kUses "uses"
+  moduleName
+    $U

@@ -269,6 +269,7 @@ The preprocessor is written as a small scanner that skips Pascal string literals
 | `begin Foo(MV_X, MV_ELL); end` | No error. Two `identifier` children of `exprArgs` |
 | `begin try MV_ELL; except end; end` | No error. `statements` > `statement` > `identifier` |
 | `begin MV_X := TStringList.Create; MV_ELL; MV_X.Free; end` | No error |
+| `begin MV_X := TStringList.Create; MV_ELL MV_X.Free; end` (ellipsis without `;`) | `ERROR` [Measured in M1] |
 
 Replacing `...` with identifier `__rawpaco_ell__` parses in argument and statement positions. `$...ARGS` is replaced with `__rawpaco_mvell_ARGS__`.
 

@@ -3,7 +3,8 @@ program rawpaco;
 {$mode objfpc}{$H+}
 
 uses
-  SysUtils, Classes, TSBindings, LintDriver, RawpacoConfig, RuleRegistry, Diagnostics;
+  SysUtils, Classes, TSBindings, LintDriver, RawpacoConfig, RuleRegistry, Diagnostics,
+  PatLexer, PatCompiler;
 
 const
   VersionString = '0.0.1-dev';
@@ -38,6 +39,49 @@ begin
     Parts.Free;
   end;
   Result := Ids;
+end;
+
+// ゴールデンテスト（設計書 7.1）用：パターン IR を標準出力にダンプする。
+// tree-sitter-pascal の更新でパターンツリーの形状が変わった場合、
+// diff として検出できる（CLAUDE.md ルール 2）。
+// 開発者向けオプションであり、通常使用を想定していない。
+function RunDumpPattern(const Path: string): Integer;
+var
+  L: TStringList;
+  PatText: string;
+  R: TPatCompileResult;
+begin
+  if not FileExists(Path) then
+  begin
+    WriteLn(StdErr, 'error: pattern file not found: ', Path);
+    Result := 2;
+    Exit;
+  end;
+
+  L := TStringList.Create;
+  try
+    L.LoadFromFile(Path);
+    PatText := L.Text;
+  finally
+    L.Free;
+  end;
+
+  if (Length(PatText) >= 2) and (PatText[Length(PatText) - 1] = #13) and (PatText[Length(PatText)] = #10) then
+    SetLength(PatText, Length(PatText) - 2)
+  else if (Length(PatText) >= 1) and (PatText[Length(PatText)] = #10) then
+    SetLength(PatText, Length(PatText) - 1);
+
+  R := CompilePattern(PatText, DefaultPatLexOptions);
+  try
+    Write(DumpPattern(R));
+  finally
+    R.Root.Free;
+  end;
+
+  if R.Ok then
+    Result := 0
+  else
+    Result := 2;
 end;
 
 var
@@ -99,7 +143,9 @@ begin
     for I := 1 to ParamCount do
     begin
       Arg := ParamStr(I);
-      if Copy(Arg, 1, 9) = '--config=' then
+      if Copy(Arg, 1, 15) = '--dump-pattern=' then
+        Halt(RunDumpPattern(Copy(Arg, 16, MaxInt)))
+      else if Copy(Arg, 1, 9) = '--config=' then
         ConfigPath := Copy(Arg, 10, Length(Arg))
       else if Copy(Arg, 1, 9) = '--format=' then
         FormatStr := Copy(Arg, 10, Length(Arg))
