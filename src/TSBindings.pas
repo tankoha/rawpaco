@@ -112,6 +112,22 @@ function ts_node_end_byte(node: TSNode): LongWord; cdecl; external;
 // 行わないための門番として使う。
 function ts_node_has_error(node: TSNode): Boolean; cdecl; external;
 
+// 宣言的ルール層(opengrep互換パターンマッチャー,
+// docs/OPENGREP_RULE_ENGINE_DESIGN.md)実装に伴う追加。
+// シグネチャは vendor/tree-sitter/include/tree_sitter/api.h
+// の42/451/511/517/523/683行目で確認済み(CLAUDE.mdルール1)。
+// TSSymbol(uint16_t)はWordで返す。
+// ts_node_is_named: 名付き子ノードのみ比較(キーワードはnamed node)
+// ts_node_is_missing: MISSINGノード含むサブツリーは不一致
+// ts_node_is_extra: コメント/ppはextraとして子リストから除外
+// ts_node_eq: ノード同一性判定(マッチ範囲の重複排除)
+// ts_node_symbol: 文字列ではなく数値でノード種を比較
+function ts_node_symbol(node: TSNode): Word; cdecl; external;
+function ts_node_is_named(node: TSNode): Boolean; cdecl; external;
+function ts_node_is_missing(node: TSNode): Boolean; cdecl; external;
+function ts_node_is_extra(node: TSNode): Boolean; cdecl; external;
+function ts_node_eq(node, other: TSNode): Boolean; cdecl; external;
+
 function tree_sitter_pascal: TSLanguage; cdecl; external name 'tree_sitter_pascal';
 
 implementation

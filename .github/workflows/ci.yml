@@ -138,7 +138,7 @@ jobs:
           for d in "${DIRS[@]}"; do
             FL_ARGS+=("-Fl$d")
           done
-          fpc -Xe -kbuild/win32_atexit_shim.o -k--allow-multiple-definition -k--strip-debug -Fusrc/Rules "-Fu$FPC_UNITS_ROOT/*" "${FL_ARGS[@]}" src/rawpaco.lpr
+          fpc -Xe -kbuild/win32_atexit_shim.o -k--allow-multiple-definition -k--strip-debug -Fusrc/Rules -Fusrc/Decl "-Fu$FPC_UNITS_ROOT/*" "${FL_ARGS[@]}" src/rawpaco.lpr
 
       - name: Run bootstrap self-check
         shell: bash
@@ -148,10 +148,22 @@ jobs:
         shell: bash
         run: bash tests/run_tests.sh
 
+      # 宣言的ルール層の単体テスト(Makefile の unittest ターゲットと同じもの)。
+      # C オブジェクトに依存しない Pascal だけのプログラムなので、上の本体ビルドの
+      # リンカ回避策(-Xe ほか)は不要。
+      - name: Run unit tests (declarative rule layer)
+        shell: bash
+        run: |
+          mkdir -p build/unittest
+          for t in TestPatLexer; do
+            fpc -Fusrc/Decl -FUbuild/unittest -FEbuild/unittest tests/unit/$t.lpr
+            ./build/unittest/$t.exe
+          done
+
       - name: Self-lint (CLAUDE.md rule 4)
         shell: bash
         # --fail-on=warning(設計書4.1.4節): 重要度別終了コード制御の既定は
         # 寛容になったため、自己lintは明示的に激辛モードを指定して従来通り
         # 診断1件でも失敗する方針を維持する(Makefileのselflintターゲットと
         # 同じ理由。Linux側はmake selflint経由なのでそちらに実装済み)。
-        run: ./src/rawpaco.exe --fail-on=warning src/*.pas src/Rules/*.pas src/rawpaco.lpr
+        run: ./src/rawpaco.exe --fail-on=warning src/*.pas src/Rules/*.pas src/Decl/*.pas src/rawpaco.lpr

@@ -26,7 +26,7 @@ RULE_SOURCES := src/Diagnostics.pas src/RuleRegistry.pas src/ASTWalker.pas \
                 src/Rules/RuleMem001.pas \
                 src/Rules/AllRules.pas
 
-.PHONY: all clean test selflint
+.PHONY: all clean test unittest selflint
 
 all: src/rawpaco
 
@@ -43,12 +43,26 @@ $(TSP_OBJ): $(VENDOR_TSP)/src/parser.c | $(BUILD)
 # fpc呼び出し自体はオブジェクト経路を意識しない単純な形のままにできる。
 # -Fusrc/Rules は src/Rules/ 配下のユニット(AllRules等)をFPCが見つける
 # ためのユニット検索パス追加(rawpaco.lprと同じsrc/直下のユニットは
-# このフラグなしでも見つかる)。
+# このフラグなしでも見つかる)。-Fusrc/Decl は宣言的ルール層
+# (docs/OPENGREP_RULE_ENGINE_DESIGN.md)のユニット用。
 src/rawpaco: src/rawpaco.lpr src/TSBindings.pas $(RULE_SOURCES) $(TS_OBJ) $(TSP_OBJ)
-	$(FPC) -Fusrc/Rules src/rawpaco.lpr
+	$(FPC) -Fusrc/Rules -Fusrc/Decl src/rawpaco.lpr
 
-test: src/rawpaco
+test: src/rawpaco unittest
 	bash tests/run_tests.sh
+
+# 宣言的ルール層の部品(パターンの前処理など)は CLI からはまだ届かないので、
+# 単体テストのプログラムで直接確かめる。tree-sitter に依存しない部品だけを
+# 対象にしているため C オブジェクトのリンクは不要。成果物は build/ に閉じ込め、
+# src/Decl に .ppu を残さない。
+UNITTESTS := TestPatLexer
+
+unittest: | $(BUILD)
+	mkdir -p $(BUILD)/unittest
+	for t in $(UNITTESTS); do \
+	  $(FPC) -Fusrc/Decl -FU$(BUILD)/unittest -FE$(BUILD)/unittest tests/unit/$$t.lpr && \
+	  ./$(BUILD)/unittest/$$t || exit 1; \
+	done
 
 # CLAUDE.mdルール4: 本ツール自身のソースをlintし警告ゼロを維持する。
 # --fail-on=warningが必須(設計書4.1.4節): 重要度別終了コード制御の既定は
@@ -57,8 +71,8 @@ test: src/rawpaco
 # 既定に頼らず明示的に激辛モードを指定する。これを忘れると9ルール中
 # 5ルール(Warning階層)がこのゲートを静かに素通りするようになる。
 selflint: src/rawpaco
-	./src/rawpaco --fail-on=warning src/*.pas src/Rules/*.pas src/rawpaco.lpr
+	./src/rawpaco --fail-on=warning src/*.pas src/Rules/*.pas src/Decl/*.pas src/rawpaco.lpr
 
 clean:
 	rm -rf $(BUILD)
-	rm -f src/rawpaco src/*.o src/*.ppu src/Rules/*.o src/Rules/*.ppu
+	rm -f src/rawpaco src/*.o src/*.ppu src/Rules/*.o src/Rules/*.ppu src/Decl/*.o src/Decl/*.ppu

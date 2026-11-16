@@ -447,6 +447,7 @@ Total 5,000–7,000 lines — as large as or larger than current rawpaco (~5,800
 - Pattern compilation golden tests: dump the pattern IR from pattern strings and compare to expected output. Used to detect the impact of tree-sitter-pascal updates (rule 2)
 - Load-error tests: unparsable patterns, ambiguous `$ABC`, unsupported keys, `patterns` without positive terms, and duplicate IDs all yield exit code 2
 - Pascal-specific handling (table in Section 4.3): positive and negative samples per row
+- Unit tests for parts not yet reachable from the CLI and independent of tree-sitter (e.g. the pattern preprocessor `src/Decl/PatLexer.pas`): small programs `tests/unit/Test<Unit>.lpr` that exit non-zero on failure, run by `make test` (target `unittest`) and by a dedicated step in the Windows CI job
 
 ### 7.2 Validation on Real Code
 
