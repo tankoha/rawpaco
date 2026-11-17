@@ -313,6 +313,8 @@ Other gates, each a case where syntax cannot answer the question: more than one 
 
 Known residual risk, accepted: a `record` type declared *outside* the file (`TTimeSpan.Create` and friends) is indistinguishable from a class, so MEM-001 could flag it. Resolving that needs class-vs-record information in `data/fpc-rtl-symbols.txt`; the measurement did not surface such a case.
 
+A proposal to lift the path-insensitive gates above (more than one creation, reassignment, whether a `finally` really covers the code between creation and free) with a per-routine control-flow graph and dataflow analysis is written up in [DATAFLOW_ENGINE_DESIGN.md](DATAFLOW_ENGINE_DESIGN.md) (2026-11-17; design only, awaiting the owner's decisions).
+
 ## 3. Placement and Execution of positive/negative Samples
 
 To stay consistent with CLAUDE.md rule 3 (both positive and negative required), the following convention is adopted (the key points are also noted in `tests/README.md`).

@@ -510,7 +510,7 @@ Build and test on both Linux and Windows (rule 7). Windows is a 32-bit build, so
 9. **How rules are specified**: CLI `--rules` only, or also a key in `rawpaco.json`?
 10. **`languages` aliases**, **accepting `nosemgrep` comments**
 11. **Bundled declarative rules**: move some native rules to declarative rules, or keep only as double implementations for validation?
-12. **Simple taint**: consider as a future rawpaco-specific feature?
+12. **Simple taint**: consider as a future rawpaco-specific feature? A possible basis (an own CFG and dataflow engine) is designed in [DATAFLOW_ENGINE_DESIGN.md](DATAFLOW_ENGINE_DESIGN.md), Section 11 and its open question 10; this item stays open
 
 ---
 

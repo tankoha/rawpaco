@@ -510,7 +510,7 @@ Linux と Windows の両方でビルドとテストを実行する（ルール7�
 9. **ルールの指定方法**: CLI の `--rules` のみか、`rawpaco.json` にもキーを足すか
 10. **`languages` の別名**、**`nosemgrep` コメントの受け入れ**
 11. **同梱する宣言的ルール**: 既存のネイティブルールの一部を宣言的ルールへ移すか、検証用の二重実装に留めるか
-12. **taint の簡易版**: rawpaco 独自機能として将来検討するか
+12. **taint の簡易版**: rawpaco 独自機能として将来検討するか。土台になりうるもの（自前の CFG とデータフロー解析エンジン）の設計を [DATAFLOW_ENGINE_DESIGN_jp.md](DATAFLOW_ENGINE_DESIGN_jp.md) の 11章と未決事項10 に書いた。本項目は未決のまま
 
 ---
 

@@ -305,6 +305,8 @@ ExitCode := AllDiagnostics が空でなければ 1、空なら 0
 
 既知の残余リスク（受け入れ済み）: ファイル外で宣言された `record` 型（`TTimeSpan.Create` 等）はクラスと区別できないため MEM-001 が誤検知しうる。解消には `data/fpc-rtl-symbols.txt` に class/record の種別を持たせる必要がある。今回の実測ではこの形は現れなかった。
 
+上記の「経路を見ない門番」（生成が2回以上、再代入、`finally` が生成から解放までを実際に覆っているか）を、ルーチン単位の制御フローグラフとデータフロー解析で外す提案を [DATAFLOW_ENGINE_DESIGN_jp.md](DATAFLOW_ENGINE_DESIGN_jp.md) にまとめた（2026-11-17。設計のみで、オーナーの判断待ち）。
+
 
 ## 3. positive/negativeサンプルの配置・実行方法
 

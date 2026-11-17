@@ -4,7 +4,7 @@
 
 ## ドキュメントの言語について
 
-`docs/RULE_ENGINE_DESIGN.md`・`docs/SYSTEM_FLOW.md`・`docs/OPENGREP_RULE_ENGINE_DESIGN.md`・`docs/flows/*.md` は英語版が正（canonical）。日本語版はファイル名に`_jp`を付けた別ファイル（例: `docs/RULE_ENGINE_DESIGN_jp.md`）として参照用に残している。内容を更新する際は英語版を先に直し、日本語版は追従（または既に古いことが分かる形でそのまま）とする。新規にこの種のドキュメントを追加する場合も同じ命名規約（英語が無印、日本語が`_jp`）に揃えること。本HANDOFF.md自体・CLAUDE.md・README.mdはこの対象外（README.mdは1ファイル内でJP/EN併記、HANDOFF.mdは元々日本語のみ）。
+`docs/RULE_ENGINE_DESIGN.md`・`docs/SYSTEM_FLOW.md`・`docs/OPENGREP_RULE_ENGINE_DESIGN.md`・`docs/DATAFLOW_ENGINE_DESIGN.md`・`docs/flows/*.md` は英語版が正（canonical）。日本語版はファイル名に`_jp`を付けた別ファイル（例: `docs/RULE_ENGINE_DESIGN_jp.md`）として参照用に残している。内容を更新する際は英語版を先に直し、日本語版は追従（または既に古いことが分かる形でそのまま）とする。新規にこの種のドキュメントを追加する場合も同じ命名規約（英語が無印、日本語が`_jp`）に揃えること。本HANDOFF.md自体・CLAUDE.md・README.mdはこの対象外（README.mdは1ファイル内でJP/EN併記、HANDOFF.mdは元々日本語のみ）。
 
 ## 実装済みルール一覧
 
@@ -235,6 +235,23 @@ AST ダンププログラム（`ts_node_string` ではなくフィールド名�
   - `fcl-yaml` は FPC 3.2.2 に含まれない（実機確認）。YAML は設計書どおり JSON 先行＋自作サブセット
   - TSBindings に足す `ts_node_is_named` / `is_missing` / `is_extra`（`bool`）、`ts_node_eq(TSNode, TSNode)`（`bool`）、`ts_node_symbol`（`TSSymbol` = `uint16_t` → `Word`）は `api.h` と照合済み
 - 設計書の【実測】は vendor のソースを gcc でビルドした検証プログラムによるもので、rawpaco 本体（fpc）でのビルド・テストは未実施
+
+## 自前の CFG・データフロー解析エンジン（2026-11-17 設計のみ。オーナー判断待ち、実装未着手）
+
+- 設計は `docs/DATAFLOW_ENGINE_DESIGN.md`（英語・正）/ `_jp.md`。tree-sitter-pascal を土台にしたまま、CST → 構造を持つルーチン IR → CFG の3段と、ビット集合のワークリスト型ソルバを `src/Flow/` に作る案。宣言的ルール層（`src/Decl/`）とは依存しない
+- **何も決まっていない。** 設計書 14章の未決事項 13 件（着手時期と体制、進捗管理の置き場所、構文エラーの門番、新しいルール ID、MEM-002 の意味の変化の可否など）にオーナーが答えてから F0 に入る。マイルストーンは F0〜F7（M・P と区別するための名前）
+- MEM-001/002 の載せ替えは2段階: 先に IR の事実だけで現行出力をバイト単位に再現する同値移植（F4）、その後にフローを見る版（F5、基準との差分を分類して確認）
+- この設計で実測した tree-sitter-pascal v0.10.2 の形（上の「既知の穴」への追加分。詳細は設計書 4.1・4.3節）:
+  - `Exit`・`Break`・`Continue`・`Halt` はキーワードではなく普通の `identifier`（`grammar.js` に `kExit` 等は無い）。`Exit(3)` は `exprCall`
+  - 条件コンパイル指令（`pp`）は extras なので、`{$ifdef} X; {$else} Y; {$endif}` は木の上で `X; Y;` の直列になる
+  - 後ろに `;` の無い裸の `raise`（`raise end` / `raise else`）は、キーワードをオペランドにした `raise` ノードになり、周囲の構造が壊れる。その場所に `ERROR` は出ない
+  - 裸の `raise;` の `ERROR`（子は `kRaise` のみ、extra）は、属する場所の**直前の兄弟**として現れる（`then` / `body` の `;` トークンの前、空の `statements` の前など）
+  - `case` の `else` 分岐には包むノードが無く、文が `kElse` の後ろに `case` の直接の子として並ぶ。セレクタにもフィールド名が無い
+  - `for var E in List do` はパースできない（`ERROR`）。`for var K := 0 to ...` は通る
+  - 無名関数は `lambda`、`@X` と `P^` は `exprUnary`（`kAt` / `kHat`）、`as` は `exprBinary`、`A += 1` は演算子 `kAssignAdd` の `assignment`
+- 実測の注意: **この設計に使った機械には fpc-source 3.2.2 が入っておらず**、MEM-001 = 10 / MEM-002 = 48 の基準は再現していない。設計書 4.4節の割合（ルーチンの 90.3% が CFG の門番を通る等）は別の FPC ソースツリー（11,029 ファイル）での値で、基準値ではない。F0 で 3.2.2 のコーパスを復元して基準を再現すること
+- そのツリーでは、ファイルの 58% でルートの `ts_node_has_error` が真だった。現行の MEM-001/002 はそういうファイルを丸ごと飛ばしている。ルーチン単位に緩めるかは未決事項4（誤検知リスクがあるので実測が前提）
+- プローブの置き場所: `{$L}` に `build/*.o` の絶対パスを書いた独立プログラムなら、`src/` の外（スクラッチ）でビルドできる（下の「検証に使ったプローブ」の制約は、`TSBindings.pas` を使う場合のもの）
 
 ## 次セッションの予定アクション（2026-09-28 時点）
 
