@@ -1,0 +1,12 @@
+{
+  "rules": [
+    {
+      "id": "DECL-DEFENSE-001",
+      "message": "empty except handler swallows the exception",
+      "severity": "ERROR",
+      "languages": ["pascal"],
+      "metadata": {"equivalent-of": "RAWPACO-DEFENSE-001"},
+      "pattern": "try\n  ...\nexcept\nend;"
+    }
+  ]
+}

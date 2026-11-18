@@ -1,0 +1,1 @@
+error: tests/decl/load/err_top_unknown_key.json: unknown top level key "version"

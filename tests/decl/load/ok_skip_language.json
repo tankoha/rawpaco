@@ -1,0 +1,4 @@
+{"rules": [
+  {"id": "py-1", "message": "m", "severity": "ERROR", "languages": ["python"], "pattern": "foo(...)"},
+  {"id": "pas-1", "message": "m", "severity": "MEDIUM", "languages": ["python", "pascal"], "pattern": "Foo(...)"}
+]}

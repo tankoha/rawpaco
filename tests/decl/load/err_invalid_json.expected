@@ -1,0 +1,1 @@
+error: tests/decl/load/err_invalid_json.json: invalid JSON: Error at line 2, Pos 12: Unexpected token (}) encountered.

@@ -1,0 +1,4 @@
+{"rules": [
+  {"id": "T-1", "message": "m", "severity": "WARNING", "languages": ["pascal"], "pattern": "A(...)"},
+  {"id": "T-1", "message": "m", "severity": "WARNING", "languages": ["pascal"], "pattern": "B(...)"}
+]}

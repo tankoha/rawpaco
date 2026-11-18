@@ -1,0 +1,1 @@
+{"rules": [{"id": "T-1", "severity": "ERROR", "languages": ["pascal"], "pattern": "Foo"}]}

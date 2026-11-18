@@ -366,6 +366,17 @@ The top level accepted is a `rules:` array. Per-rule keys: `id` / `message` / `s
 - Unknown keys are errors too
 - `severity`: the current `TSeverity` has two values, `svWarning` and `svError`, and declaration order is used by `--fail-on` comparisons [Source-checked: `Diagnostics.pas`]. Map `ERROR` / `HIGH` / `CRITICAL` to `svError` and `WARNING` / `MEDIUM` to `svWarning`. There is nowhere for `INFO` / `LOW`; **Decided (#6, 2026-11-17): add `svInfo` before `svWarning`** (adding `info` to `--fail-on`). It is needed in M2 already, as the target of the one-level downgrade of nested-block matches (#4, Section 4.3)
 
+**M1 JSON loader (implemented 2026-11-19, `src/Decl/RuleFile.pas`).** The JSON form is opengrep's YAML written as JSON: `{"rules": [{"id": ..., "message": ..., "severity": ..., "languages": [...], "pattern": ...}]}`. Choices made while implementing it:
+
+- Accepted rule keys in M1: `id`, `message`, `severity`, `languages`, `pattern`, `metadata` (an object, otherwise ignored), `options` (`pascal_hex_dollar`, `go_deeper_stmt`, both booleans; any other option is an error). The only top-level key is `rules`
+- Every other key is a load error, with three distinct messages: keys planned for later milestones (`patterns`, `pattern-either`, `pattern-regex`, `metavariable-*`, `focus-metavariable`, `paths`, `fix`, …) say "not supported yet"; excluded features (`mode`, `pattern-sources` and the other taint keys, `metavariable-type`, `join`, `extract`, …) say "out of scope"; anything else is "unknown key"
+- `id` must be non-empty and use only letters, digits, `_`, `-`, `.` so that it cannot clash with the comma-separated `--only` / `--exclude` lists. Duplicate IDs are an error both within a file and against rules already loaded
+- `languages` must be a non-empty array of strings; a rule without the exact string `pascal` is skipped with a notice (aliases are still open, #10)
+- `severity` is case-sensitive as in opengrep. `INFO` / `LOW` are load errors until `svInfo` exists (M2), rather than being mapped to `svWarning`: reporting more severely than the author intended could fail a `--fail-on=warning` build
+- A `pattern` that compiles to a statement sequence is a load error until M2, because the M1 matcher returns no matches for it and an empty result would read as "safe"
+- Loading is all-or-nothing per file. Errors are reported as `<file>: rules[<i>] (id "<id>"): <reason>`
+- The developer option `--dump-rules=FILE` prints the loaded rules and their pattern IR; golden tests are in `tests/decl/load/`
+
 **How to read YAML.** Four candidates:
 
 | Option | Description | Assessment |

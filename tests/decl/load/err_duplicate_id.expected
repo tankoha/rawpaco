@@ -1,0 +1,1 @@
+error: tests/decl/load/err_duplicate_id.json: rules[1] (id "T-1"): "id": duplicate rule id "T-1"

@@ -1,0 +1,5 @@
+{"rules": [
+  {"id": "s.high", "message": "m", "severity": "HIGH", "languages": ["pascal"], "pattern": "A(...)"},
+  {"id": "s.critical", "message": "m", "severity": "CRITICAL", "languages": ["pascal"], "pattern": "B(...)"},
+  {"id": "s.medium", "message": "m", "severity": "MEDIUM", "languages": ["pascal"], "pattern": "C(...)"}
+]}

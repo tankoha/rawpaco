@@ -4,7 +4,7 @@ program rawpaco;
 
 uses
   SysUtils, Classes, TSBindings, LintDriver, RawpacoConfig, RuleRegistry, Diagnostics,
-  PatLexer, PatCompiler, PatMatcher;
+  PatLexer, PatCompiler, PatMatcher, RuleFile;
 
 const
   VersionString = '0.0.1-dev';
@@ -82,6 +82,35 @@ begin
     Result := 0
   else
     Result := 2;
+end;
+
+// 開発者向けオプション: ルールファイル（JSON）を読み込み、読めたルールとコンパイル後の
+// パターンを標準出力に表示する。ルールローダのゴールデンテスト（tests/decl/load）用。
+// 読み込みエラーは --rules と同じく終了コード 2 にする。
+function RunDumpRules(const Path: string): Integer;
+var
+  Rules: TDeclRuleList;
+  Notices: TStringList;
+  ErrorMessage: string;
+  I: Integer;
+begin
+  Rules := TDeclRuleList.Create;
+  Notices := TStringList.Create;
+  try
+    if not LoadRulesFromFile(Path, Rules, Notices, ErrorMessage) then
+    begin
+      WriteLn('error: ', ErrorMessage);
+      Result := 2;
+      Exit;
+    end;
+    for I := 0 to Notices.Count - 1 do
+      WriteLn('notice: ', Notices[I]);
+    Write(DumpRules(Rules));
+    Result := 0;
+  finally
+    Notices.Free;
+    Rules.Free;
+  end;
 end;
 
 // 開発者向けオプション: パターンがソース内のどこにマッチし、メタ変数に何が
@@ -247,6 +276,8 @@ begin
       Arg := ParamStr(I);
       if Copy(Arg, 1, 16) = '--match-pattern=' then
         MatchPath := Copy(Arg, 17, MaxInt)
+      else if Copy(Arg, 1, 13) = '--dump-rules=' then
+        Halt(RunDumpRules(Copy(Arg, 14, MaxInt)))
       else if Copy(Arg, 1, 15) = '--dump-pattern=' then
         Halt(RunDumpPattern(Copy(Arg, 16, MaxInt)))
       else if Copy(Arg, 1, 9) = '--config=' then

@@ -1,0 +1,13 @@
+notice: tests/decl/load/ok_options.json: rules[0] (id "T-1"): warning: 1:5: `$FF` is kept as a hexadecimal literal (pascal_hex_dollar)
+rule T-1
+  file: tests/decl/load/ok_options.json
+  severity: warning
+  message: m
+  options: pascal_hex_dollar=true go_deeper_stmt=false
+  pattern:
+    wrapper: statement
+    warning: 1:5: `$FF` is kept as a hexadecimal literal (pascal_hex_dollar)
+    exprCall
+      entity: identifier "Foo"
+      args: exprArgs
+        literalNumber "$FF"

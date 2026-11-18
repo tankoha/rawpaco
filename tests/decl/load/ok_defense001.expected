@@ -1,0 +1,13 @@
+rule DECL-DEFENSE-001
+  file: tests/decl/load/ok_defense001.json
+  severity: error
+  message: empty except handler swallows the exception
+  options: pascal_hex_dollar=false go_deeper_stmt=true
+  pattern:
+    wrapper: statement
+    try
+      kTry "try"
+      try: statements
+        ...
+      except: kExcept "except"
+      kEnd "end"

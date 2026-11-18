@@ -1,0 +1,1 @@
+error: tests/decl/load/err_top_not_object.json: the top level must be a JSON object

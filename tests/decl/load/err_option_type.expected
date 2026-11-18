@@ -1,0 +1,1 @@
+error: tests/decl/load/err_option_type.json: rules[0] (id "T-1"): "options": "go_deeper_stmt": expected true or false

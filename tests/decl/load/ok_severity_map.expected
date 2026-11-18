@@ -1,0 +1,33 @@
+rule s.high
+  file: tests/decl/load/ok_severity_map.json
+  severity: error
+  message: m
+  options: pascal_hex_dollar=false go_deeper_stmt=true
+  pattern:
+    wrapper: statement
+    exprCall
+      entity: identifier "A"
+      args: exprArgs
+        ...
+rule s.critical
+  file: tests/decl/load/ok_severity_map.json
+  severity: error
+  message: m
+  options: pascal_hex_dollar=false go_deeper_stmt=true
+  pattern:
+    wrapper: statement
+    exprCall
+      entity: identifier "B"
+      args: exprArgs
+        ...
+rule s.medium
+  file: tests/decl/load/ok_severity_map.json
+  severity: warning
+  message: m
+  options: pascal_hex_dollar=false go_deeper_stmt=true
+  pattern:
+    wrapper: statement
+    exprCall
+      entity: identifier "C"
+      args: exprArgs
+        ...

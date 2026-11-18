@@ -1,0 +1,12 @@
+notice: tests/decl/load/ok_skip_language.json: rules[0] (id "py-1"): skipped: "languages" does not include "pascal"
+rule pas-1
+  file: tests/decl/load/ok_skip_language.json
+  severity: warning
+  message: m
+  options: pascal_hex_dollar=false go_deeper_stmt=true
+  pattern:
+    wrapper: statement
+    exprCall
+      entity: identifier "Foo"
+      args: exprArgs
+        ...

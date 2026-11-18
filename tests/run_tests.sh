@@ -249,6 +249,24 @@ for pat in tests/decl/dump/*.pat; do
   fi
 done
 
+# ルールローダのゴールデンテスト（同 7.1）。<名前>.json を --dump-rules で読み込み、
+# 読めたルールとパターン IR、または読み込みエラーを <名前>.expected と比べる。
+# 期待値が `error:` で始まるものは読み込みエラー（終了コード 2）、それ以外は 0 を期待する。
+for rules in tests/decl/load/*.json; do
+  [ -e "$rules" ] || continue
+  expected="${rules%.json}.expected"
+  output="$("$RAWPACO" --dump-rules="$rules" 2>&1)"; rc=$?
+  output="$(printf '%s\n' "$output" | tail -n +2 | tr -d '\r')"
+  if head -n 1 "$expected" | grep -q '^error:'; then want_rc=2; else want_rc=0; fi
+  if [ "$output" != "$(tr -d '\r' < "$expected")" ] || [ "$rc" != "$want_rc" ]; then
+    echo "FAIL: rule load '$rules' (rc=$rc, want $want_rc)"
+    diff <(tr -d '\r' < "$expected") <(printf '%s\n' "$output") | sed 's/^/  /'
+    FAIL=1
+  else
+    echo "ok:   rule load '$rules'"
+  fi
+done
+
 # マッチャのゴールデンテスト（同 7.1）。<名前>.pat を <名前>.pas に当て、一致した位置と
 # メタ変数の束縛の一覧を <名前>.expected と比べる。.pas には一致すべきコードと一致しては
 # いけないコードの両方を入れる（CLAUDE.md ルール3）。JSON ルールローダができるまでは
