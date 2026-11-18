@@ -5,7 +5,7 @@ unit PatMatcher;
 // パターン IR（PatCompiler）を対象ファイルの tree-sitter の木と照合する（設計書 4.3 節）。
 // M1 の範囲: 名前付きの子の比較、extras（comment / pp）の除外、葉の比較規則、
 // メタ変数の単一化、子の列の ellipsis（バックトラック）、括弧の透過。
-// 文の並び（pkSequence）は M2、括弧なしの呼び出しと `raise;` は別タスクで扱う。
+// 括弧なしの呼び出しと `raise;`（設計書 4.3 の Pascal 固有の扱い）。文の並び（pkSequence）は M2。
 
 interface
 
@@ -117,21 +117,29 @@ begin
   TempCount := 0;
   for I := 0 to Count - 1 do
   begin
-    if (ts_node_is_named(ts_node_child(T, LongWord(I)))) and (not ts_node_is_extra(ts_node_child(T, LongWord(I)))) then
+    if (ts_node_is_named(ts_node_child(T, LongWord(I))) and (not ts_node_is_extra(ts_node_child(T, LongWord(I)))))
+      or IsBareRaiseError(ts_node_child(T, LongWord(I))) then
       Inc(TempCount);
   end;
   SetLength(Result, TempCount);
   TempCount := 0;
   for I := 0 to Count - 1 do
   begin
-    if (ts_node_is_named(ts_node_child(T, LongWord(I)))) and (not ts_node_is_extra(ts_node_child(T, LongWord(I)))) then
+    if (ts_node_is_named(ts_node_child(T, LongWord(I))) and (not ts_node_is_extra(ts_node_child(T, LongWord(I)))))
+      or IsBareRaiseError(ts_node_child(T, LongWord(I))) then
     begin
       Result[TempCount].Node := ts_node_child(T, LongWord(I));
-      P := ts_node_field_name_for_child(T, LongWord(I));
-      if P <> nil then
-        Result[TempCount].Field := string(P)
+      // bare raise の ERROR にはフィールド名が付かない（実測）
+      if IsBareRaiseError(ts_node_child(T, LongWord(I))) then
+        Result[TempCount].Field := ''
       else
-        Result[TempCount].Field := '';
+      begin
+        P := ts_node_field_name_for_child(T, LongWord(I));
+        if P <> nil then
+          Result[TempCount].Field := string(P)
+        else
+          Result[TempCount].Field := '';
+      end;
       Inc(TempCount);
     end;
   end;
@@ -210,8 +218,8 @@ var
 begin
   T := StripParens(T);
 
-  // Never match inside broken code (design 4.3)
-  if ts_node_has_error(T) then
+  // bare raise の ERROR 以外のエラー・MISSING には一致させない（設計書 4.3）
+  if HasErrorOtherThanBareRaise(T) then
   begin
     Result := False;
     Exit;
@@ -220,6 +228,12 @@ begin
   case P.Kind of
     pkMetaVar:
     begin
+      // メタ変数は extras（bare raise の ERROR 等）に一致しない
+      if IsBareRaiseError(T) then
+      begin
+        Result := False;
+        Exit;
+      end;
       // A metavariable stands for an expression/name, never for a keyword
       if IsKeywordNode(T) then
       begin
@@ -251,6 +265,12 @@ begin
       Result := True;
       Exit;
     end;
+
+    pkBareRaise:
+      begin
+        Result := IsBareRaiseError(T);
+        Exit;
+      end;
 
     pkEllipsis, pkMetaVarEllipsis, pkSequence:
       begin
@@ -330,6 +350,66 @@ begin
       B[High(B)].EndByte := At;
     end;
   end;
+end;
+
+function MatchParenlessCall(P: TPatNode; T: TSNode; const Source: string; var B: TBindingArray): Boolean;
+var
+  Entity: TPatNode;
+  Args: TPatNode;
+  HasEntity, HasArgs: Boolean;
+  I: Integer;
+  Saved: TBindingArray;
+begin
+  Result := False;
+  Entity := nil;
+  Args := nil;
+  if (P.Kind <> pkNode) or (P.NodeType <> 'exprCall') then
+    Exit;
+  if (string(ts_node_type(T)) <> 'identifier') and (string(ts_node_type(T)) <> 'exprDot') then
+    Exit;
+
+  // パターン子は entity 1 個 + 任意で args 1 個のみ（それ以外の子があると括弧なし呼び出しではない）
+  HasEntity := False;
+  HasArgs := False;
+  for I := 0 to P.ChildCount - 1 do
+  begin
+    if P.Children[I].FieldName = 'entity' then
+    begin
+      if HasEntity then Exit;
+      HasEntity := True;
+      Entity := P.Children[I];
+    end
+    else if P.Children[I].FieldName = 'args' then
+    begin
+      if HasArgs then Exit;
+      HasArgs := True;
+      Args := P.Children[I];
+    end
+    else
+      Exit;
+  end;
+  if not HasEntity then
+    Exit;
+
+  Saved := Copy(B);
+
+  // 括弧なしの呼び出しには引数が無い。`Foo($X)` のように引数を要求するパターンは一致させず、
+  // `Foo(...)` のように引数が ellipsis だけのときに限る（0 個の引数として扱う）。
+  if HasArgs then
+  begin
+    if not CanMatchAbsent(Args) then
+      Exit;
+    if not BindEmptyEllipses(Args, ts_node_end_byte(T), T, Source, B) then
+    begin
+      B := Saved;
+      Exit;
+    end;
+  end;
+
+  if MatchNode(Entity, T, Source, B) then
+    Result := True
+  else
+    B := Saved;
 end;
 
 function MatchList(P: TPatNode; PI: Integer; const TL: TChildList; TI: Integer; ParentNode: TSNode; const Source: string; var B: TBindingArray): Boolean;
@@ -447,15 +527,23 @@ begin
 
   Saved := Copy(B);
   if (MatchNode(C, TL[TI].Node, Source, B)) and (MatchList(P, PI + 1, TL, TI + 1, ParentNode, Source, B)) then
-    Result := True
-  else
   begin
-    B := Saved;
-    Result := False;
+    Result := True;
+    Exit;
+  end;
+  B := Saved;
+  Result := False;
+  // 括弧なしの呼び出しは文の位置でだけ認める。式の位置の `Y := Foo` は変数の参照と区別できない。
+  if string(ts_node_type(ParentNode)) = 'statement' then
+  begin
+    if (MatchParenlessCall(C, TL[TI].Node, Source, B)) and (MatchList(P, PI + 1, TL, TI + 1, ParentNode, Source, B)) then
+      Result := True
+    else
+      B := Saved;
   end;
 end;
 
-procedure VisitForMatch(Pattern: TPatNode; Node: TSNode; const Source: string; var Matches: TPatMatchArray);
+procedure VisitForMatch(Pattern: TPatNode; Node: TSNode; const Source: string; ParentIsStatement: Boolean; var Matches: TPatMatchArray);
 var
   NType: string;
   B: TBindingArray;
@@ -478,6 +566,21 @@ begin
       M.EndPoint := ts_node_end_point(Node);
       M.Bindings := B;
       Matches[Length(Matches) - 1] := M;
+    end
+    else if ParentIsStatement then
+    begin
+      // 文の位置でのみ括弧なし呼び出しに一致させる（式位置では変数参照と区別できない）
+      B := nil;
+      if MatchParenlessCall(Pattern, Node, Source, B) then
+      begin
+        SetLength(Matches, Length(Matches) + 1);
+        M.StartByte := ts_node_start_byte(Node);
+        M.EndByte := ts_node_end_byte(Node);
+        M.StartPoint := ts_node_start_point(Node);
+        M.EndPoint := ts_node_end_point(Node);
+        M.Bindings := B;
+        Matches[Length(Matches) - 1] := M;
+      end;
     end;
   end;
 
@@ -485,8 +588,9 @@ begin
   for J := 0 to Cnt - 1 do
   begin
     Child := ts_node_child(Node, LongWord(J));
-    if (ts_node_is_named(Child)) and (not ts_node_is_extra(Child)) then
-      VisitForMatch(Pattern, Child, Source, Matches);
+    // bare raise の ERROR は extra だが照合対象にする（パターンが raise; 単独の場合）
+    if ((ts_node_is_named(Child)) and (not ts_node_is_extra(Child))) or IsBareRaiseError(Child) then
+      VisitForMatch(Pattern, Child, Source, (string(ts_node_type(Node)) = 'statement'), Matches);
   end;
 end;
 
@@ -495,7 +599,8 @@ begin
   Result := nil;
   if Pattern.Kind = pkSequence then
     Exit;
-  VisitForMatch(Pattern, Root, Source, Result);
+  // ルートの親は statement ではない（ファイル全体を走査している）
+  VisitForMatch(Pattern, Root, Source, False, Result);
 end;
 
 function BindingText(const B: TMetaVarBinding; const Source: string): string;

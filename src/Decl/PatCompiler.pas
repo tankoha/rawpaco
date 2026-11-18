@@ -18,7 +18,8 @@ type
     pkMetaVar,          // $X（$_ も含む。束縛しないかどうかはマッチャが名前で判断する）
     pkEllipsis,         // ...
     pkMetaVarEllipsis,  // $...X
-    pkSequence          // 文や宣言が 2 個以上並んだパターン。子がその並び
+    pkSequence,         // 文や宣言が 2 個以上並んだパターン。子がその並び
+    pkBareRaise         // 引数なしの `raise;`。下の IsBareRaiseError の形の ERROR と照合する
   );
 
   // どのラッパーでパースできたか（設計書 4.2 (1) の 1〜3）。
@@ -68,6 +69,17 @@ type
 
 function CompilePattern(const Src: string; const Opts: TPatLexOptions): TPatCompileResult;
 
+// tree-sitter-pascal v0.10.2 は引数なしの `raise;` をパースできず、子が `kRaise` だけの
+// extra な `ERROR` にする。この ERROR は属する文の並びの中（またはその直前の兄弟）に現れ、
+// 周囲の構造は保たれる（2026-11-19 実測。HANDOFF.md の既知の穴）。`raise;` は Pascal で
+// ごく普通の書き方なので、この形だけは「ERROR を含む木とは照合しない」の例外にして、
+// パターン側・対象側の両方で普通の子として扱う（設計書 4.3）。文法の更新で `raise;` が
+// 正しくパースされるようになったら、この例外は取り除くこと（設計書 9章）。
+function IsBareRaiseError(N: TSNode): Boolean;
+
+// N の部分木に、IsBareRaiseError の形以外の ERROR か MISSING があれば True。
+function HasErrorOtherThanBareRaise(N: TSNode): Boolean;
+
 // ゴールデンテスト用のテキスト表現（設計書 7.1）。tree-sitter-pascal を更新したときに
 // パターンの木の形が変わったことを差分で検出するために使う（CLAUDE.md ルール2）。
 function DumpPattern(const R: TPatCompileResult): string;
@@ -110,9 +122,51 @@ begin
   Result := FChildren[Index];
 end;
 
+function IsBareRaiseError(N: TSNode): Boolean;
+begin
+  Result := (string(ts_node_type(N)) = 'ERROR')
+    and (ts_node_child_count(N) = 1)
+    and (string(ts_node_type(ts_node_child(N, 0))) = 'kRaise');
+end;
+
+function HasErrorOtherThanBareRaise(N: TSNode): Boolean;
+var
+  Cnt: Integer;
+  I: Integer;
+  C: TSNode;
+begin
+  if not ts_node_has_error(N) then
+  begin
+    Result := False;
+    Exit;
+  end;
+  if IsBareRaiseError(N) then
+  begin
+    Result := False;
+    Exit;
+  end;
+  if (string(ts_node_type(N)) = 'ERROR') or ts_node_is_missing(N) then
+  begin
+    Result := True;
+    Exit;
+  end;
+  Result := False;
+  Cnt := Integer(ts_node_child_count(N));
+  for I := 0 to Cnt - 1 do
+  begin
+    C := ts_node_child(N, LongWord(I));
+    if HasErrorOtherThanBareRaise(C) then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
+end;
+
 function IsRelevant(N: TSNode): Boolean;
 begin
-  Result := (ts_node_is_named(N) and (not ts_node_is_extra(N)));
+  // bare raise の ERROR は extra だがパターン子として残す必要がある
+  Result := (ts_node_is_named(N) and (not ts_node_is_extra(N))) or IsBareRaiseError(N);
 end;
 
 function CountRelevant(N: TSNode): Integer;
@@ -184,6 +238,14 @@ var
     RelCnt2: Integer;
     CTxt: string;
   begin
+    // tree-sitter-pascal は引数なし raise; を ERROR(kRaise) にする（設計書 4.3）
+    if IsBareRaiseError(N) then
+    begin
+      Result := TPatNode.Create(pkBareRaise);
+      Result.FieldName := Field;
+      Exit;
+    end;
+
     Txt := NodeText(N, Code);
 
     if NodeTypeName(N) = 'identifier' then
@@ -333,7 +395,16 @@ var
     Tree := ts_parser_parse_string(P, nil, PAnsiChar(Code), Length(Code));
     try
       RootNode := ts_tree_root_node(Tree);
-      if ts_node_has_error(RootNode) then Exit;
+      // 宣言の並び（pwAsIs）に `raise;` は来ないので、そこでは ERROR を一切許さない。
+      // 文と式のラッパーでは `raise;` の ERROR の形だけを許す。
+      if W = pwAsIs then
+      begin
+        if ts_node_has_error(RootNode) then Exit;
+      end
+      else
+      begin
+        if HasErrorOtherThanBareRaise(RootNode) then Exit;
+      end;
 
       case W of
         pwAsIs:
@@ -484,6 +555,8 @@ begin
       Line := Line + '$...' + N.MetaVarName;
     pkSequence:
       Line := Line + 'sequence';
+    pkBareRaise:
+      Line := Line + 'raise;';
   end;
 
   S := S + Line + #10;

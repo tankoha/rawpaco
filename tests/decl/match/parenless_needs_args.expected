@@ -1,0 +1,2 @@
+tests/decl/match/parenless_needs_args.pas:4:3-4:9: Foo(1)
+  $X = 1

@@ -1,0 +1,9 @@
+wrapper: statement
+try
+  kTry "try"
+  try: statements
+    ...
+  except: kExcept "except"
+  raise;
+  except: statements ";"
+  kEnd "end"

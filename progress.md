@@ -78,7 +78,7 @@ M1 着手前に決めたいもの（★）から順に並べる。決まった�
 - [x] PatCompiler: ラッパー 3 段の試行（そのまま → `begin <P> end` → `begin __rawpaco_w__ := <P> end`）、パターン IR への変換、`ts_tree_delete` → `src/Decl/PatCompiler.pas`（interface は Opus、implementation は Qwen。差し戻し 1 回）。`exprParens` はパターン側で除去する。式だけの `statement` 1 個は式パターンにする。ellipsis だけのパターン・空のパターンは読み込みエラー
 - [x] パターン IR のダンプ機能とゴールデンテスト → 開発者向けオプション `--dump-pattern=FILE`（関数本体は Qwen）。`tests/decl/dump/*.pat` と `.expected` の 14 件を `run_tests.sh` で照合（期待値を壊すと落ちることを確認済み）
 - [x] PatMatcher: 名前付きの子の比較、`comment` / `pp` の除外、葉の比較規則、メタ変数の単一化、子の列の ellipsis（バックトラック）、`exprParens` の透過 → `src/Decl/PatMatcher.pas`（interface は Opus、implementation は Qwen。コンパイルエラー 2 点は Opus が修正）。`Foo()` に `exprArgs` が無いことへの対処（ellipsis だけの子を持つノードは「無い」にも一致）は Opus が追加。`$...X` の 2 回目以降はソーステキストの完全一致で比べる（M3 の `$...ARGS` で見直す）。開発者向けオプション `--match-pattern=PAT ファイル...`（関数本体は Qwen）と、`tests/decl/match/` のゴールデン 9 件
-- [ ] Pascal 固有: 文の位置の括弧なし呼び出し、`raise;` の専用ノード
+- [x] Pascal 固有: 文の位置の括弧なし呼び出し、`raise;` の専用ノード → IR の `pkBareRaise` と `PatCompiler.IsBareRaiseError` / `HasErrorOtherThanBareRaise`（interface は Opus、実装は Qwen。レビューで Opus が 3 点修正）。`raise;` の ERROR は両側で普通の子として扱い、エラーの門番はこの形だけを通す。括弧なしの呼び出しは `PatMatcher.MatchParenlessCall`（親が `statement` のときだけ）。ゴールデン: 照合 6 件、ダンプ 1 件を追加
 - [ ] JSON ルールローダ（`fpjson`）。未知キー・未対応機能キーはエラー（終了コード 2）
 - [ ] `IRawpacoRule` アダプタ（`InterestedNodeTypes = root`）と `--rules=<file|dir>`、ID 重複エラー、`--only` / `--exclude` との連携
 - [ ] `message` の `$X` 補間
@@ -128,6 +128,8 @@ M1 着手前に決めたいもの（★）から順に並べる。決まった�
 ## 6. 作業ログ
 
 新しいものを上に追記する。1 エントリ: 日付 / 担当 / やったこと / 結果（テスト・CI）/ 次の一手。
+
+- 2026-11-19 / Opus（ローカル）+ Qwen: Pascal 固有の扱い（括弧なしの呼び出し、`raise;`）。まず fpc-source 3.2.2+dfsg-49 を入れ直し、全ルールの基準値の再現を確認した（HANDOFF.md）。プローブで木を実測した結果、`raise;` は子が `kRaise` だけの extra な ERROR で、属する並びの中か、属するフィールドの直前の兄弟として現れる。extras は子の列から除いていたので、パターン側では `raise;` が読み込めず、対象側では見えなかった。そこでこの形だけを両側で普通の子として扱う設計にした（設計書 4.3 の表に追記）。Qwen には差し替える関数だけを出力させ、Opus が組み込んだ。組み込み用のスクリプトが interface の宣言行にも一致してファイルを壊したので、git から戻してやり直した（検索を implementation 以降に限定）。レビューで直したのは 3 点: `TryWrapper` のぶら下がり else（文・式のラッパーでエラー検査が素通りになっていた）、`MatchList` の 2 つの経路で `Result` が未設定のまま読まれていたこと、変数の初期化漏れ。`$C` は #3 の決定どおり 16 進と曖昧でエラーになることを、サンプルを書く中で再確認した（`$COND` に変更）。`;` の無いパターン `raise` は式のラッパーで識別子として読まれ、何にも一致しない（従来からの挙動。設計書に明記）。fpc-source 全体で新しいパターンを流し、クラッシュが無いことと、1 パターンあたり約 48 秒であることを確認した。`raise;` の取りこぼしを grep と突き合わせると、すべて文字列・コメントの中か、tree-sitter-pascal がファイルの大部分を 1 つの extra な ERROR にしている領域だった（例: `fcl-xml/src/xmltextreader.pp` の 816〜3982 行）。後者は「エラーの中は照合しない」方針による既存の挙動で、括弧なしの呼び出しや他のパターンも同じく取りこぼす。M2 の fpc-source 実測では、この取りこぼしの量も数えること。結果: make / make test（照合 15 件、ダンプ 15 件）/ make selflint 緑。次の一手: CI の確認 → JSON ルールローダ
 
 - 2026-11-17 / Opus（ローカル）+ Qwen: PatMatcher。対象側の木を実測し、`pp` も `ERROR` も extras であることを確認した。そのため extras を飛ばすだけでは ERROR を見落とすので、照合の入口で `ts_node_has_error` を見る仕様にした。Qwen の実装は照合ロジック（バックトラック、`Copy` による束縛の退避、範囲束縛）が 1 回で正しかった。直したのはコンパイルエラー 2 点（本体のない前方宣言、`case` の分岐の `begin`/`end` 漏れ）と警告 1 点で、いずれも Opus が修正。ゴールデンテストで、`Foo()` には `exprArgs` が無いために `Foo(...)` が一致しないことを発見した。仕様の漏れなので Opus が規則を追加し、設計書 4.3 の表にも追記した。`try ... except end;` のパターンで空の except を検出でき、M1 の完了条件（DEFENSE-001 相当）の見通しが立った。`LintDriver.ReadFileAsString` を interface に公開した。結果: make / make test（単体 22 件、ダンプ 14 件、照合 9 件）/ make selflint 緑。push 後の CI（run 43910340637）も Linux / Windows とも緑（照合 9 件ずつ通過）。次の一手: Pascal 固有（括弧なしの呼び出し、`raise;`）→ JSON ルールローダ
 

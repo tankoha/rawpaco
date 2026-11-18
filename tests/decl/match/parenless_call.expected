@@ -1,0 +1,4 @@
+tests/decl/match/parenless_call.pas:3:3-3:6: Foo
+tests/decl/match/parenless_call.pas:4:13-4:16: Foo
+tests/decl/match/parenless_call.pas:5:14-5:17: Foo
+tests/decl/match/parenless_call.pas:6:3-6:9: Foo(1)

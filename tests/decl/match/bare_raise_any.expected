@@ -1,0 +1,2 @@
+tests/decl/match/bare_raise_any.pas:6:24-6:29: raise
+tests/decl/match/bare_raise_any.pas:8:18-8:23: raise

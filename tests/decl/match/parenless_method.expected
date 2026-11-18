@@ -1,0 +1,6 @@
+tests/decl/match/parenless_method.pas:3:3-3:9: X.Free
+  $X = X
+tests/decl/match/parenless_method.pas:4:3-4:11: A.B.Free
+  $X = A.B
+tests/decl/match/parenless_method.pas:5:3-5:11: X.Free()
+  $X = X

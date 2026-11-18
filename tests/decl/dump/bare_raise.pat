@@ -1,0 +1,5 @@
+try
+  ...
+except
+  raise;
+end;

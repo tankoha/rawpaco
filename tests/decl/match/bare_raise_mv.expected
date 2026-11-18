@@ -1,0 +1,2 @@
+tests/decl/match/bare_raise_mv.pas:3:3-3:24: if Failed then raise;
+  $COND = Failed
