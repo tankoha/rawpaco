@@ -273,7 +273,8 @@ done
 # 診断が混ざらないよう、lint するケースでは args で --only を指定する。
 for case_dir in tests/decl/cli/*/; do
   [ -d "$case_dir" ] || continue
-  read -r -a case_args < "${case_dir}args"
+  # Windows の checkout では args が CRLF になり、最後の引数に \r が付いて開けなくなるので落とす。
+  read -r -a case_args < <(tr -d '\r' < "${case_dir}args")
   output="$("$RAWPACO" "${case_args[@]}" 2>&1)"; rc=$?
   output="$(printf '%s\nrc=%s\n' "$(printf '%s\n' "$output" | tail -n +2 | tr -d '\r')" "$rc")"
   if [ "$output" != "$(tr -d '\r' < "${case_dir}expected")" ]; then
