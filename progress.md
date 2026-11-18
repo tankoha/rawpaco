@@ -82,8 +82,8 @@ M1 着手前に決めたいもの（★）から順に並べる。決まった�
 - [x] JSON ルールローダ（`fpjson`）。未知キー・未対応機能キーはエラー（終了コード 2）→ `src/Decl/RuleFile.pas`（interface は Opus、implementation は Qwen。レビューで Opus が 5 点修正）。決めたことは設計書 4.6 に追記。開発者向けオプション `--dump-rules=FILE` と、`tests/decl/load/` のゴールデン 30 件（読み込める 5 件、エラー 25 件）。ネイティブのルールとの ID 重複は次のアダプタのタスクで扱う
 - [x] `IRawpacoRule` アダプタ（`InterestedNodeTypes = root`）と `--rules=<file|dir>`、ID 重複エラー、`--only` / `--exclude` との連携 → `src/Decl/DeclRule.pas`（interface は Opus、implementation は Qwen。差し戻しなし、Opus の修正は警告 1 点のみ）。`TLintContext` に `ReportAt` と `Source` を追加（Opus）。CLI の配線と README も Opus。`tests/decl/cli/` に lint 全体を通したゴールデン 14 件
 - [x] `message` の `$X` 補間 → `src/Decl/MsgInterp.pas`（interface と単体テスト `tests/unit/TestMsgInterp.lpr` 31 件は Opus、implementation は Qwen。直したのは変数名 1 点と自明なコメントだけ）。組み込み（アダプタでの補間、ローダでの未束縛の参照の警告）は Opus。ゴールデン: lint 全体 1 件（`tests/decl/cli/interp`）、読み込み 1 件（`ok_message_unbound`）
-- [ ] テスト: `tests/decl/<機能>/` に positive / negative、読み込みエラーのテスト
-- [ ] 完了条件: DEFENSE-001 相当を宣言的ルールで書き、既存サンプルでネイティブ版と同じ結果になる
+- [x] テスト: `tests/decl/<機能>/` に positive / negative、読み込みエラーのテスト → 各タスクで追加済み: `dump` 17 件、`match` 16 件、`load` 31 件、`cli` 16 件、単体 22 + 31 件。どの照合のゴールデンにも一致すべきコードと一致してはいけないコードの両方を入れている
+- [x] 完了条件: DEFENSE-001 相当を宣言的ルールで書き、既存サンプルでネイティブ版と同じ結果になる → `tests/decl/equiv/defense001.json`（単一の `pattern` のルール 4 本の和）。既存サンプル 7 件で、検出する構文がネイティブ版と一致（negative 4 件すべて、positive 0 件）。報告位置は try の行と except の行で違う（`focus-metavariable` は M2）。そのために例外ハンドラ用の 4 番目のラッパーを追加（設計書 4.2）。fpc-source 全体の比較は作業ログを参照。**M1 完了（2026-11-19）**
 
 ### M2 合成（目安 1,000〜1,500 行）
 
@@ -128,6 +128,8 @@ M1 着手前に決めたいもの（★）から順に並べる。決まった�
 ## 6. 作業ログ
 
 新しいものを上に追記する。1 エントリ: 日付 / 担当 / やったこと / 結果（テスト・CI）/ 次の一手。
+
+- 2026-11-19 / Opus（ローカル）: M1 の完了条件。ネイティブの DEFENSE-001 は 3 つの形（`except end`、`except ; end`、本体が `;` だけの `on ... do`）を報告する。M1 は単一の `pattern` だけなので、宣言的ルール 4 本（ハンドラは変数ありとなしで 2 本）の和で比べた。ハンドラ 1 個のパターン `on $V: $T do ;` はどのラッパーでもパースできず、ハンドラの並びの中に ellipsis も置けない（`...` が識別子になり、ハンドラと並べられない）ので、4 番目のラッパー `begin try except <P> end end` を追加した（Opus が直接実装。設計書 4.2 に追記）。`$E` は #3 の決定どおり 16 進と曖昧でエラーになるので `$V` を使った。既存サンプル 7 件では検出する構文がネイティブ版と完全に一致した（報告位置は try 行と except 行の違いだけ）。fpc-source 全体ではネイティブ 68 件、宣言的 53 件で、宣言的だけが出すものは 0 件。差の 15 件は全部分類できた: (1) 11 件は `on E: X do raise;`。裸の `raise;` が extra な ERROR になり、ハンドラの body フィールドが `;` だけになるため、**ネイティブ版が「空のハンドラ」と誤検知していた**。宣言的ルールは raise の ERROR を子として数えるので正しく一致しない（`tests/decl/equiv/reraise_handler.pas` で再現。ネイティブは 2 件、宣言的は 0 件）。(2) 4 件はファイルの大部分が 1 つの extra な ERROR になっている領域の中の、本物の空の except。宣言的エンジンは「エラーの中は照合しない」方針で飛ばす。結果: make / make test / make selflint 緑。**M1 完了**。次の一手: ネイティブ DEFENSE-001 の誤検知の修正（オーナー判断）→ M2 着手前の続行判断はまだ不要（M1〜M2 の後）
 
 - 2026-11-19 / Opus（ローカル）+ Qwen: `message` の `$X` 補間。補間は tree-sitter に依存しない新ユニット `MsgInterp` に切り出し、束縛を「キーと値の文字列の組」で受け取る形にした。単体テストを Opus が仕様から先に書き、Qwen の実装は 1 回で 31 件すべて通った。直したのは、ローカル変数 `pos` が `SysUtils.Pos` を隠していた点（RuleFile と同じ癖）と、コードをなぞるだけのコメント 2 か所。仕様の判断: `$X` と `$...X` は照合器では同じ名前の束縛だが、メッセージでは書き分けたとおりにだけ置き換える。束縛されていない参照は残して警告し、エラーにはしない（M2 の pattern-either のため）。束縛テキストの空白・改行はまとめる（複数行の `Log('a',\n B + 1)` が 1 行に収まることをゴールデンで確認）。前回の教訓から、標準エラーの通知は標準出力と混ざらない `--dump-rules` のテストで確かめた。結果: make / make test（単体 22 + 31 件、lint 全体 15 件を含む）/ make selflint 緑。push 後の CI（run 44408701800）も Linux / Windows とも緑（TestMsgInterp 31 件と interp のゴールデンが両方で通過）。次の一手: M1 の完了条件（DEFENSE-001 相当の宣言的ルールで、既存のサンプルがネイティブ版と同じ結果になること）
 

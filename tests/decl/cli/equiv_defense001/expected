@@ -1,0 +1,5 @@
+tests/negative/RAWPACO-DEFENSE-001/empty_except.pas:6:3: error: except block is empty: the exception is caught and silently discarded [DECL-DEFENSE-001-EMPTY]
+tests/negative/RAWPACO-DEFENSE-001/empty_on_handler.pas:12:5: error: exception handler ("on E: Exception do") has an empty body: the exception is silently discarded [DECL-DEFENSE-001-HANDLER]
+tests/negative/RAWPACO-DEFENSE-001/multiple_handlers_one_empty.pas:14:5: error: exception handler ("on ESecond: Exception do") has an empty body: the exception is silently discarded [DECL-DEFENSE-001-HANDLER]
+tests/negative/RAWPACO-DEFENSE-001/semicolon_only_except.pas:6:3: error: except block contains no statements (only ";"): the exception is silently discarded [DECL-DEFENSE-001-SEMICOLON]
+rc=1

@@ -22,8 +22,11 @@ type
     pkBareRaise         // 引数なしの `raise;`。下の IsBareRaiseError の形の ERROR と照合する
   );
 
-  // どのラッパーでパースできたか（設計書 4.2 (1) の 1〜3）。
-  TPatWrapper = (pwAsIs, pwStatement, pwExpression);
+  // どのラッパーでパースできたか（設計書 4.2 (1) の 1〜4）。
+  // pwHandler は `on $V: $T do ...` のような例外ハンドラ 1 個のパターン用。ハンドラは
+  // except の中にしか書けず、文としても式としてもパースできないため（M1 の完了条件の
+  // DEFENSE-001 相当で、複数のハンドラの中の空のハンドラを書くのに必要になった）。
+  TPatWrapper = (pwAsIs, pwStatement, pwExpression, pwHandler);
 
   TPatNode = class
   private
@@ -383,6 +386,7 @@ var
     FN: PAnsiChar;
     AssignNode: TSNode;
     FoundRhs: Boolean;
+    TryNode: TSNode;
   begin
     Result := False;
 
@@ -390,6 +394,7 @@ var
       pwAsIs: Code := L.Text;
       pwStatement: Code := 'begin ' + L.Text + #10 + ' end';
       pwExpression: Code := 'begin __rawpaco_w__ := ' + L.Text + #10 + ' end';
+      pwHandler: Code := 'begin try except ' + L.Text + #10 + ' end end';
     end;
 
     Tree := ts_parser_parse_string(P, nil, PAnsiChar(Code), Length(Code));
@@ -447,6 +452,28 @@ var
               end;
             end;
             if not FoundRhs then Exit;
+          end;
+        pwHandler:
+          begin
+            // 包んだ try の except の中身が exceptionHandler ちょうど 1 個のときだけ
+            // 受け付ける。複数のハンドラ（並びのパターン）は M2 の文の並びと同じ扱いにする。
+            if not CollectBlockItems(RootNode, Items) then Exit;
+            if (Length(Items) <> 1) or (NodeTypeName(Items[0]) <> 'try') then Exit;
+            TryNode := Items[0];
+            SetLength(Items, 0);
+            Cnt := ts_node_child_count(TryNode);
+            for I := 0 to Cnt - 1 do
+            begin
+              C := ts_node_child(TryNode, LongWord(I));
+              FN := ts_node_field_name_for_child(TryNode, LongWord(I));
+              if (FN <> nil) and (string(FN) = 'except') and IsRelevant(C)
+                and (NodeTypeName(C) <> 'kExcept') then
+              begin
+                SetLength(Items, Length(Items) + 1);
+                Items[Length(Items) - 1] := C;
+              end;
+            end;
+            if (Length(Items) <> 1) or (NodeTypeName(Items[0]) <> 'exceptionHandler') then Exit;
           end;
       end;
 
@@ -506,10 +533,11 @@ begin
     if not TryWrapper(pwAsIs) then
       if not TryWrapper(pwStatement) then
         if not TryWrapper(pwExpression) then
-        begin
-          Result.ErrorMessage := 'the pattern cannot be parsed as Pascal declarations, statements or an expression';
-          Exit;
-        end;
+          if not TryWrapper(pwHandler) then
+          begin
+            Result.ErrorMessage := 'the pattern cannot be parsed as Pascal declarations, statements, an expression or an exception handler';
+            Exit;
+          end;
   finally
     ts_parser_delete(P);
   end;
@@ -581,6 +609,7 @@ begin
     pwAsIs: S := S + 'wrapper: as-is' + #10;
     pwStatement: S := S + 'wrapper: statement' + #10;
     pwExpression: S := S + 'wrapper: expression' + #10;
+    pwHandler: S := S + 'wrapper: handler' + #10;
   end;
 
   for I := 0 to High(R.Warnings) do

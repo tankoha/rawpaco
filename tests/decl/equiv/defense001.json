@@ -1,0 +1,36 @@
+{
+  "rules": [
+    {
+      "id": "DECL-DEFENSE-001-EMPTY",
+      "message": "except block is empty: the exception is caught and silently discarded",
+      "severity": "ERROR",
+      "languages": ["pascal"],
+      "metadata": {"equivalent-of": "RAWPACO-DEFENSE-001"},
+      "pattern": "try\n  ...\nexcept\nend;"
+    },
+    {
+      "id": "DECL-DEFENSE-001-SEMICOLON",
+      "message": "except block contains no statements (only \";\"): the exception is silently discarded",
+      "severity": "ERROR",
+      "languages": ["pascal"],
+      "metadata": {"equivalent-of": "RAWPACO-DEFENSE-001"},
+      "pattern": "try\n  ...\nexcept\n  ;\nend;"
+    },
+    {
+      "id": "DECL-DEFENSE-001-HANDLER",
+      "message": "exception handler (\"on $V: $T do\") has an empty body: the exception is silently discarded",
+      "severity": "ERROR",
+      "languages": ["pascal"],
+      "metadata": {"equivalent-of": "RAWPACO-DEFENSE-001"},
+      "pattern": "on $V: $T do ;"
+    },
+    {
+      "id": "DECL-DEFENSE-001-HANDLER-NOVAR",
+      "message": "exception handler (\"on $T do\") has an empty body: the exception is silently discarded",
+      "severity": "ERROR",
+      "languages": ["pascal"],
+      "metadata": {"equivalent-of": "RAWPACO-DEFENSE-001"},
+      "pattern": "on $T do ;"
+    }
+  ]
+}

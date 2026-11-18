@@ -237,6 +237,7 @@ Therefore try wrappers in this order and adopt the first result that contains no
 1. As-is (declaration-level patterns)
 2. `begin <P> end` (statements, statement sequences)
 3. `begin __rawpaco_w__ := <P> end` (expressions)
+4. `begin try except <P> end end` (a single exception handler such as `on $V: $T do ;`; **added in M1, 2026-11-19**). Handlers can only appear inside `except` and parse as neither statements nor expressions, yet a rule must be able to target one handler among several (the M1 done condition needed it). Accepted only when the `except` part holds exactly one `exceptionHandler`; the pattern IR is that handler node, so it matches wherever such a handler appears. A list of handlers is a sequence pattern and waits for M2
 
 A pattern that parses with none of them is a rule-load error (exit code 2). It is not silently disabled (same policy as unknown keys in `rawpaco.json`).
 

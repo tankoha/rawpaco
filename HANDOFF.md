@@ -192,7 +192,7 @@ AST ダンププログラム（`ts_node_string` ではなくフィールド名�
 
 ルール候補の事前検証（2026-09-28）で得た MODE / MEM / dotted ユニット名の実測結果は、実装に伴って設計書 `docs/RULE_ENGINE_DESIGN.md` の 2.7節（MODE）・2.8節（MEM）・P7（vendoring した依存の一覧と dotted 対応）と、上の該当節に移した。
 
-## opengrep 互換の宣言的ルール層（2026-11-16 方針決定。M1 実施中、進捗は progress.md）
+## opengrep 互換の宣言的ルール層（2026-11-16 方針決定。M1 完了（2026-11-19）、M2 未着手。進捗は progress.md）
 
 - 検討と設計は `docs/OPENGREP_RULE_ENGINE_DESIGN.md`（英語・正）/ `_jp.md`。opengrep 本体の取り込み（リンク・外部プロセス・全再実装）は不採用。検索モードのサブセットを FPC で再実装し、tree-sitter-pascal の CST 上で動かす案 (d) をオーナーが採用した
 - タスクの状態・作業ログ・未決事項の決定状況は `progress.md` で管理する（体制: ローカルの Opus が管制・レビュー、ローカルの Qwen が実装）。M0 は完了し、M1 の途中（PatLexer / PatCompiler / PatMatcher まで完了、2026-11-17）。次の一手と残タスクは progress.md の 4章・6章を参照。M1〜M2 の後に続行可否を判断する区切りがある
@@ -202,6 +202,7 @@ AST ダンププログラム（`ts_node_string` ではなくフィールド名�
   - `fcl-yaml` は FPC 3.2.2 に含まれない（実機確認）。YAML は設計書どおり JSON 先行＋自作サブセット
   - TSBindings に足す `ts_node_is_named` / `is_missing` / `is_extra`（`bool`）、`ts_node_eq(TSNode, TSNode)`（`bool`）、`ts_node_symbol`（`TSSymbol` = `uint16_t` → `Word`）は `api.h` と照合済み
 - 設計書の【実測】は vendor のソースを gcc でビルドした検証プログラムによるもの。M1 で rawpaco 本体（fpc）に組み込んだ部分は、`make test` のゴールデンテストと CI（Linux / Windows）で確認している
+- **M1 の完了時に見つけた、ネイティブ RAWPACO-DEFENSE-001 の誤検知（未修正、2026-11-19）**: `on E: X do raise;`（投げ直し）を「本体が空のハンドラ」と報告する。裸の `raise;` が extra な ERROR になり、`exceptionHandler` の body フィールドが `;` トークンだけになるため。fpc-source 全体の 68 件のうち 11 件がこれ（つまり DEFENSE-001 の正しい基準値は 57 件）。再現は `tests/decl/equiv/reraise_handler.pas`。直すと基準値が変わるので、修正はオーナー判断。宣言的ルールの同等品（`tests/decl/equiv/defense001.json`）はこれを正しく報告しない
 
 ## 自前の CFG・データフロー解析エンジン（2026-11-17 設計のみ。オーナー判断待ち、実装未着手）
 

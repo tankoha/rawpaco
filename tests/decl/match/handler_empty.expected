@@ -1,0 +1,6 @@
+tests/decl/match/handler_empty.pas:6:5-7:8: on E: Exception do
+  $V = E
+  $T = Exception
+tests/decl/match/handler_empty.pas:14:5-15:8: on B: Exception do
+  $V = B
+  $T = Exception

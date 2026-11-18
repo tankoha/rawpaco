@@ -1,1 +1,1 @@
-error: the pattern cannot be parsed as Pascal declarations, statements or an expression
+error: the pattern cannot be parsed as Pascal declarations, statements, an expression or an exception handler
