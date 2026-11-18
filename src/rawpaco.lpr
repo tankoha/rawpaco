@@ -4,7 +4,7 @@ program rawpaco;
 
 uses
   SysUtils, Classes, TSBindings, LintDriver, RawpacoConfig, RuleRegistry, Diagnostics,
-  PatLexer, PatCompiler, PatMatcher, RuleFile;
+  PatLexer, PatCompiler, PatMatcher, RuleFile, DeclRule;
 
 const
   VersionString = '0.0.1-dev';
@@ -223,9 +223,13 @@ var
   I: Integer;
   Arg, ConfigPath, ConfigError, FilterError, FormatError, FormatStr,
     FailOnError, FailOnStr, MatchPath: string;
-  OnlyIds, ExcludeIds: TStringArray;
+  OnlyIds, ExcludeIds, RulePaths: TStringArray;
   OutFormat: TOutputFormat;
   FailOnLevel: TSeverity;
+  DeclRules: TDeclRuleList;
+  RuleNotices: TStringList;
+  RulesError: string;
+  LintResult: Integer;
 begin
   WriteLn('rawpaco ', VersionString, ' - FPC/Lazarus Pascal lint tool (tree-sitter-pascal based)');
 
@@ -270,12 +274,24 @@ begin
     SetLength(OnlyIds, 0);
     SetLength(ExcludeIds, 0);
     SetLength(Files, 0);
+    SetLength(RulePaths, 0);
     MatchPath := '';
     for I := 1 to ParamCount do
     begin
       Arg := ParamStr(I);
       if Copy(Arg, 1, 16) = '--match-pattern=' then
         MatchPath := Copy(Arg, 17, MaxInt)
+      else if Copy(Arg, 1, 8) = '--rules=' then
+      begin
+        // 繰り返し指定できる（設計書 OPENGREP_RULE_ENGINE_DESIGN 4.7）。
+        if Length(Arg) = 8 then
+        begin
+          WriteLn(StdErr, 'error: --rules= requires a rule file or directory');
+          Halt(2);
+        end;
+        SetLength(RulePaths, Length(RulePaths) + 1);
+        RulePaths[High(RulePaths)] := Copy(Arg, 9, MaxInt);
+      end
       else if Copy(Arg, 1, 13) = '--dump-rules=' then
         Halt(RunDumpRules(Copy(Arg, 14, MaxInt)))
       else if Copy(Arg, 1, 15) = '--dump-pattern=' then
@@ -312,7 +328,7 @@ begin
       else if Copy(Arg, 1, 2) = '--' then
       begin
         WriteLn(StdErr, 'error: unknown option ', Arg);
-        WriteLn(StdErr, 'usage: rawpaco [--config=<path>] [--format=text|github|json] [--fail-on=error|warning] [--only=<id>[,<id>...] | --exclude=<id>[,<id>...]] <file.pas> ...');
+        WriteLn(StdErr, 'usage: rawpaco [--config=<path>] [--format=text|github|json] [--fail-on=error|warning] [--only=<id>[,<id>...] | --exclude=<id>[,<id>...]] [--rules=<file.json|dir> ...] <file.pas> ...');
         Halt(2);
       end
       else
@@ -353,18 +369,41 @@ begin
       WriteLn(StdErr, 'error: --only and --exclude cannot be used together');
       Halt(2);
     end;
-    if not RuleRegistry.SetRuleFilter(OnlyIds, ExcludeIds, FilterError) then
-    begin
-      WriteLn(StdErr, 'error: ', FilterError);
-      Halt(2);
-    end;
 
-    if Length(Files) = 0 then
-    begin
-      WriteLn(StdErr, 'error: no input files');
-      Halt(2);
-    end;
+    // 宣言的ルールは --only / --exclude の ID 検査より前に登録する。SetRuleFilter は
+    // 登録済みのルールの ID だけを既知とみなすため（設計書 OPENGREP_RULE_ENGINE_DESIGN 4.7）。
+    // DeclRules はアダプタが参照するので、lint が終わるまで解放しない。
+    DeclRules := TDeclRuleList.Create;
+    RuleNotices := TStringList.Create;
+    try
+      if Length(RulePaths) > 0 then
+      begin
+        if not LoadAndRegisterDeclRules(RulePaths, DeclRules, RuleNotices, RulesError) then
+        begin
+          WriteLn(StdErr, 'error: ', RulesError);
+          Halt(2);
+        end;
+        for I := 0 to RuleNotices.Count - 1 do
+          WriteLn(StdErr, 'notice: ', RuleNotices[I]);
+      end;
 
-    Halt(LintDriver.RunLint(Files, OutFormat, FailOnLevel));
+      if not RuleRegistry.SetRuleFilter(OnlyIds, ExcludeIds, FilterError) then
+      begin
+        WriteLn(StdErr, 'error: ', FilterError);
+        Halt(2);
+      end;
+
+      if Length(Files) = 0 then
+      begin
+        WriteLn(StdErr, 'error: no input files');
+        Halt(2);
+      end;
+
+      LintResult := LintDriver.RunLint(Files, OutFormat, FailOnLevel);
+    finally
+      RuleNotices.Free;
+      DeclRules.Free;
+    end;
+    Halt(LintResult);
   end;
 end.

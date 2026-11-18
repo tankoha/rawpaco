@@ -1,0 +1,1 @@
+{"rules": [{"id": "DECL-B", "message": "from b.json", "severity": "ERROR", "languages": ["pascal"], "pattern": "Foo(...)"}]}

@@ -1,0 +1,1 @@
+--only=DECL-A,DECL-B --rules=tests/decl/cli/dir_load/rules tests/decl/cli/exclude_decl/target.pas

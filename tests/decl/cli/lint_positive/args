@@ -1,0 +1,1 @@
+--fail-on=warning --only=DECL-EMPTY-EXCEPT,DECL-FREE --rules=tests/decl/cli/lint_basic/rules.json tests/decl/cli/lint_basic/clean.pas

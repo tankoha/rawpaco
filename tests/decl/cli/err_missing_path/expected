@@ -1,0 +1,2 @@
+error: tests/decl/cli/no_such_rules.json: no such file or directory
+rc=2

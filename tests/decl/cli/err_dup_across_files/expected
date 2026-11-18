@@ -1,0 +1,2 @@
+error: tests/decl/cli/notice_skip/rules.json: rules[1] (id "DECL-FOO"): "id": duplicate rule id "DECL-FOO"
+rc=2

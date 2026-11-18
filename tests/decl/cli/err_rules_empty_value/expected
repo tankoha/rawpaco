@@ -1,0 +1,2 @@
+error: --rules= requires a rule file or directory
+rc=2

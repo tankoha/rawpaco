@@ -1,0 +1,2 @@
+tests/decl/cli/exclude_decl/target.pas:3:3: error: Foo is called [DECL-FOO]
+rc=1

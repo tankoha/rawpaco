@@ -1,0 +1,2 @@
+error: tests/decl/cli/err_native_dup/rules.json: rule id "rawpaco-defense-001" is already used by a built-in rule
+rc=2

@@ -40,8 +40,14 @@ type
     destructor Destroy; override;
     procedure Report(const ARuleId: string; ASeverity: TSeverity;
       const AMessage: string; const Node: TSNode);
+    // 位置で報告する。宣言的ルール（src/Decl）の一致はノードではなくバイト範囲と
+    // 開始位置で返るため（設計書 OPENGREP_RULE_ENGINE_DESIGN 4.7）。終了位置は M2。
+    procedure ReportAt(const ARuleId: string; ASeverity: TSeverity;
+      const AMessage: string; const Point: TSPoint);
     function GetNodeText(const Node: TSNode): AnsiString;
     property FileName: string read FFileName;
+    // 宣言的ルールの照合器（PatMatcher.FindMatches）が葉のテキスト比較に使う。
+    property Source: AnsiString read FSource;
     property Diagnostics: TDiagnosticList read FDiagnostics;
   end;
 
@@ -100,11 +106,15 @@ end;
 
 procedure TLintContext.Report(const ARuleId: string; ASeverity: TSeverity;
   const AMessage: string; const Node: TSNode);
+begin
+  ReportAt(ARuleId, ASeverity, AMessage, ts_node_start_point(Node));
+end;
+
+procedure TLintContext.ReportAt(const ARuleId: string; ASeverity: TSeverity;
+  const AMessage: string; const Point: TSPoint);
 var
   Diag: TDiagnostic;
-  Point: TSPoint;
 begin
-  Point := ts_node_start_point(Node);
   Diag.RuleId := ARuleId;
   Diag.Message := AMessage;
   Diag.FileName := FFileName;

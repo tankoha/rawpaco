@@ -1,0 +1,1 @@
+{"rules": [{"id": "DECL-FOO", "message": "Foo is called", "severity": "ERROR", "languages": ["pascal"], "pattern": "Foo(...)"}]}

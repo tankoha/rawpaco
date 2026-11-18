@@ -1,0 +1,2 @@
+error: unknown rule id in --only: DECL-NOPE
+rc=2

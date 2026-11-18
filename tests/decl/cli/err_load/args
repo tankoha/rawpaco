@@ -1,0 +1,1 @@
+--rules=tests/decl/load/err_unknown_key.json tests/decl/cli/exclude_decl/target.pas

@@ -1,0 +1,3 @@
+tests/decl/cli/exclude_decl/target.pas:3:3: error: from a.json [DECL-A]
+tests/decl/cli/exclude_decl/target.pas:3:3: error: from b.json [DECL-B]
+rc=1

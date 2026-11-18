@@ -1,0 +1,2 @@
+error: tests/decl/cli/err_empty_dir/rules: no *.json rule files in the directory
+rc=2

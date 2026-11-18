@@ -1,0 +1,1 @@
+--only=DECL-FOO --rules=tests/decl/cli/notice_skip/rules.json tests/decl/cli/lint_basic/clean.pas

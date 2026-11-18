@@ -267,6 +267,24 @@ for rules in tests/decl/load/*.json; do
   fi
 done
 
+# --rules で宣言的ルールを読み込んだ lint 全体のゴールデンテスト（同 7.1、4.7）。
+# tests/decl/cli/<ケース>/args の 1 行を引数として rawpaco に渡し、標準出力と標準エラー
+# （1 行目のバージョン表示を除く）と終了コードを expected と比べる。ネイティブのルールの
+# 診断が混ざらないよう、lint するケースでは args で --only を指定する。
+for case_dir in tests/decl/cli/*/; do
+  [ -d "$case_dir" ] || continue
+  read -r -a case_args < "${case_dir}args"
+  output="$("$RAWPACO" "${case_args[@]}" 2>&1)"; rc=$?
+  output="$(printf '%s\nrc=%s\n' "$(printf '%s\n' "$output" | tail -n +2 | tr -d '\r')" "$rc")"
+  if [ "$output" != "$(tr -d '\r' < "${case_dir}expected")" ]; then
+    echo "FAIL: decl cli '$case_dir'"
+    diff <(tr -d '\r' < "${case_dir}expected") <(printf '%s\n' "$output") | sed 's/^/  /'
+    FAIL=1
+  else
+    echo "ok:   decl cli '$case_dir'"
+  fi
+done
+
 # マッチャのゴールデンテスト（同 7.1）。<名前>.pat を <名前>.pas に当て、一致した位置と
 # メタ変数の束縛の一覧を <名前>.expected と比べる。.pas には一致すべきコードと一致しては
 # いけないコードの両方を入れる（CLAUDE.md ルール3）。JSON ルールローダができるまでは

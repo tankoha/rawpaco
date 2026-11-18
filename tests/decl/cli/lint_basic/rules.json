@@ -1,0 +1,8 @@
+{
+  "rules": [
+    {"id": "DECL-EMPTY-EXCEPT", "message": "empty except handler", "severity": "ERROR",
+     "languages": ["pascal"], "pattern": "try\n  ...\nexcept\nend;"},
+    {"id": "DECL-FREE", "message": "call to Free", "severity": "WARNING",
+     "languages": ["pascal"], "pattern": "$X.Free(...)"}
+  ]
+}

@@ -26,7 +26,8 @@ RULE_SOURCES := src/Diagnostics.pas src/RuleRegistry.pas src/ASTWalker.pas \
                 src/Rules/RuleMem001.pas \
                 src/Rules/AllRules.pas \
                 src/Decl/PatLexer.pas src/Decl/PatCompiler.pas \
-                src/Decl/PatMatcher.pas src/Decl/RuleFile.pas
+                src/Decl/PatMatcher.pas src/Decl/RuleFile.pas \
+                src/Decl/DeclRule.pas
 
 .PHONY: all clean test unittest selflint
 

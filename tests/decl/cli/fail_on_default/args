@@ -1,0 +1,1 @@
+--only=DECL-FREE --rules=tests/decl/cli/lint_basic/rules.json tests/decl/cli/lint_basic/target.pas

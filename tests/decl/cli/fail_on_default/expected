@@ -1,0 +1,2 @@
+tests/decl/cli/lint_basic/target.pas:7:3: warning: call to Free [DECL-FREE]
+rc=0

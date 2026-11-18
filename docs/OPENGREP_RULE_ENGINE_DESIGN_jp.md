@@ -409,6 +409,7 @@ M0 の結果（2026-11-17）。freepascal.org の 3.2.2 向け FCL リファレ�
 - **登録**: 宣言的ルール1本につき `IRawpacoRule` を実装したアダプタを1個作り、`RegisterRule` する。`InterestedNodeTypes` は `root` のみとし、`Check` の中でファイル全体を自己完結で評価する。これは RAWPACO-DEPR-001 が採った方式（インスタンスにファイルをまたぐ状態を持たせない）と同じである
 - **`--only` / `--exclude`**: `AllRuleIds` が登録済みルールから ID を集める作りなので、ルールファイルの読み込みを `SetRuleFilter` より前に行えばそのまま効く。ID がネイティブルールと重複したら読み込みエラー
 - **CLI**: `--rules=<ファイルまたはディレクトリ>` を追加（複数指定可）。プロジェクトに固定するものは設定ファイル、という既存の層分けに従い `rawpaco.json` に `rulePaths` を足すかは未決
+  - **M1 で実装（2026-11-19、`src/Decl/DeclRule.pas`）。** ディレクトリを渡すと直下の `*.json` を読み、Windows と Linux で順序が揃うよう `CompareStr` で名前順に並べる。再帰はしない。存在しないパスと、`*.json` が 1 つも無いディレクトリはエラー（終了コード 2）。宣言的ルールの ID が、大文字小文字を無視してネイティブのルールの ID と一致したらエラー（大文字小文字だけが違う ID は `--only` の指定や出力で紛らわしいため）。ルールは `--only` / `--exclude` の検査より前に登録するので、これらのオプションに宣言的ルールの ID を書ける。他言語のルールを飛ばした通知は標準エラーに出す。`rawpaco.json` にはまだキーを足さない（#9 は未決のまま）。lint 全体を通したゴールデンテストは `tests/decl/cli/`
 - **診断**: `TDiagnostic` は開始位置しか持たない【ソース確認】。SARIF の region、`focus-metavariable`、autofix のために終了位置を追加し、`TLintContext` に範囲で報告する口を足す
 - **メッセージ**: `message` 中の `$X` を束縛テキストで置換する
 - **抑制**: 既存の `// rawpaco:ignore <RuleId>` がそのまま効く。`nosemgrep` コメントを別名として認めるかは未決

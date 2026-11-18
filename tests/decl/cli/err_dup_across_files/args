@@ -1,0 +1,1 @@
+--rules=tests/decl/cli/exclude_decl/rules.json --rules=tests/decl/cli/notice_skip/rules.json tests/decl/cli/exclude_decl/target.pas
