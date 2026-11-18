@@ -1,0 +1,5 @@
+tests/decl/cli/interp/target.pas:3:3: warning: List is freed here [DECL-FREE-MSG]
+tests/decl/cli/interp/target.pas:4:3: warning: Self.Items is freed here [DECL-FREE-MSG]
+tests/decl/cli/interp/target.pas:5:3: warning: Log called with ('a', B + 1) [DECL-LOG-ARGS]
+tests/decl/cli/interp/target.pas:7:3: warning: Log called with () [DECL-LOG-ARGS]
+rc=1

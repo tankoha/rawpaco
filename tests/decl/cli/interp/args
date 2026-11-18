@@ -1,0 +1,1 @@
+--fail-on=warning --only=DECL-FREE-MSG,DECL-LOG-ARGS --rules=tests/decl/cli/interp/rules.json tests/decl/cli/interp/target.pas

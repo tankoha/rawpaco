@@ -81,7 +81,7 @@ function DumpRules(Rules: TDeclRuleList): string;
 implementation
 
 uses
-  fpjson, jsonparser, LintDriver;
+  fpjson, jsonparser, LintDriver, MsgInterp;
 
 const
   CAcceptedKeys: array[0..6] of string =
@@ -147,6 +147,16 @@ begin
     end;
 end;
 
+
+function InArray(const S: string; const Arr: TStringArray): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 0 to High(Arr) do
+    if Arr[I] = S then
+      Exit(True);
+end;
 
 function IsValidId(const S: string): Boolean;
 var
@@ -235,6 +245,10 @@ var
   PatVal: string;
   CR: TPatCompileResult;
   W: Integer;
+  Refs: TMsgVarRefArray;
+  Warned: TStringArray;
+  RefBound: Boolean;
+  RefText: string;
 begin
   Rule := nil;
   ErrMsg := '';
@@ -470,6 +484,28 @@ begin
   for W := 0 to High(CR.Warnings) do
     if Notices <> nil then
       Notices.Add(Prefix + ': warning: ' + CR.Warnings[W]);
+
+  // message がパターンで束縛されないメタ変数を参照していたら警告する。補間されずに
+  // `$Y` のまま出るのでたぶん書き間違いだが、エラーにはしない。M2 の pattern-either
+  // では片方の枝でだけ束縛される名前が正当にありうるため。
+  Refs := FindMessageMetaVars(MsgVal);
+  Warned := nil;
+  for W := 0 to High(Refs) do
+  begin
+    if Refs[W].IsEllipsis then
+      RefBound := InArray(Refs[W].Name, CR.MetaVarEllipses)
+    else
+      // `$_` は照合器が束縛しない（PatMatcher.MatchNode）。
+      RefBound := (Refs[W].Name <> '_') and InArray(Refs[W].Name, CR.MetaVars);
+    RefText := Copy(MsgVal, Refs[W].StartPos, Refs[W].Len);
+    if (not RefBound) and (not InArray(RefText, Warned)) then
+    begin
+      SetLength(Warned, Length(Warned) + 1);
+      Warned[High(Warned)] := RefText;
+      if Notices <> nil then
+        Notices.Add(Prefix + ': warning: "message" refers to ' + RefText + ', which the pattern does not bind');
+    end;
+  end;
 
   Rule := TDeclRule.Create;
   Rule.Id := RuleId;

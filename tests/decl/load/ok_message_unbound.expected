@@ -1,0 +1,15 @@
+notice: tests/decl/load/ok_message_unbound.json: rules[0] (id "T-1"): warning: "message" refers to $...X, which the pattern does not bind
+notice: tests/decl/load/ok_message_unbound.json: rules[0] (id "T-1"): warning: "message" refers to $Y, which the pattern does not bind
+notice: tests/decl/load/ok_message_unbound.json: rules[0] (id "T-1"): warning: "message" refers to $_, which the pattern does not bind
+rule T-1
+  file: tests/decl/load/ok_message_unbound.json
+  severity: warning
+  message: $X and $...X and $Y and $_ and $Y again
+  options: pascal_hex_dollar=false go_deeper_stmt=true
+  pattern:
+    wrapper: statement
+    exprCall
+      entity: identifier "Foo"
+      args: exprArgs
+        $X
+        $_

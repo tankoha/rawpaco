@@ -1,0 +1,8 @@
+{
+  "rules": [
+    {"id": "DECL-FREE-MSG", "message": "$X is freed here", "severity": "WARNING",
+     "languages": ["pascal"], "pattern": "$X.Free(...)"},
+    {"id": "DECL-LOG-ARGS", "message": "Log called with ($...ARGS)", "severity": "WARNING",
+     "languages": ["pascal"], "pattern": "Log($...ARGS)"}
+  ]
+}

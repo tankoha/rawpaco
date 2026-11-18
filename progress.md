@@ -81,7 +81,7 @@ M1 着手前に決めたいもの（★）から順に並べる。決まった�
 - [x] Pascal 固有: 文の位置の括弧なし呼び出し、`raise;` の専用ノード → IR の `pkBareRaise` と `PatCompiler.IsBareRaiseError` / `HasErrorOtherThanBareRaise`（interface は Opus、実装は Qwen。レビューで Opus が 3 点修正）。`raise;` の ERROR は両側で普通の子として扱い、エラーの門番はこの形だけを通す。括弧なしの呼び出しは `PatMatcher.MatchParenlessCall`（親が `statement` のときだけ）。ゴールデン: 照合 6 件、ダンプ 1 件を追加
 - [x] JSON ルールローダ（`fpjson`）。未知キー・未対応機能キーはエラー（終了コード 2）→ `src/Decl/RuleFile.pas`（interface は Opus、implementation は Qwen。レビューで Opus が 5 点修正）。決めたことは設計書 4.6 に追記。開発者向けオプション `--dump-rules=FILE` と、`tests/decl/load/` のゴールデン 30 件（読み込める 5 件、エラー 25 件）。ネイティブのルールとの ID 重複は次のアダプタのタスクで扱う
 - [x] `IRawpacoRule` アダプタ（`InterestedNodeTypes = root`）と `--rules=<file|dir>`、ID 重複エラー、`--only` / `--exclude` との連携 → `src/Decl/DeclRule.pas`（interface は Opus、implementation は Qwen。差し戻しなし、Opus の修正は警告 1 点のみ）。`TLintContext` に `ReportAt` と `Source` を追加（Opus）。CLI の配線と README も Opus。`tests/decl/cli/` に lint 全体を通したゴールデン 14 件
-- [ ] `message` の `$X` 補間
+- [x] `message` の `$X` 補間 → `src/Decl/MsgInterp.pas`（interface と単体テスト `tests/unit/TestMsgInterp.lpr` 31 件は Opus、implementation は Qwen。直したのは変数名 1 点と自明なコメントだけ）。組み込み（アダプタでの補間、ローダでの未束縛の参照の警告）は Opus。ゴールデン: lint 全体 1 件（`tests/decl/cli/interp`）、読み込み 1 件（`ok_message_unbound`）
 - [ ] テスト: `tests/decl/<機能>/` に positive / negative、読み込みエラーのテスト
 - [ ] 完了条件: DEFENSE-001 相当を宣言的ルールで書き、既存サンプルでネイティブ版と同じ結果になる
 
@@ -128,6 +128,8 @@ M1 着手前に決めたいもの（★）から順に並べる。決まった�
 ## 6. 作業ログ
 
 新しいものを上に追記する。1 エントリ: 日付 / 担当 / やったこと / 結果（テスト・CI）/ 次の一手。
+
+- 2026-11-19 / Opus（ローカル）+ Qwen: `message` の `$X` 補間。補間は tree-sitter に依存しない新ユニット `MsgInterp` に切り出し、束縛を「キーと値の文字列の組」で受け取る形にした。単体テストを Opus が仕様から先に書き、Qwen の実装は 1 回で 31 件すべて通った。直したのは、ローカル変数 `pos` が `SysUtils.Pos` を隠していた点（RuleFile と同じ癖）と、コードをなぞるだけのコメント 2 か所。仕様の判断: `$X` と `$...X` は照合器では同じ名前の束縛だが、メッセージでは書き分けたとおりにだけ置き換える。束縛されていない参照は残して警告し、エラーにはしない（M2 の pattern-either のため）。束縛テキストの空白・改行はまとめる（複数行の `Log('a',\n B + 1)` が 1 行に収まることをゴールデンで確認）。前回の教訓から、標準エラーの通知は標準出力と混ざらない `--dump-rules` のテストで確かめた。結果: make / make test（単体 22 + 31 件、lint 全体 15 件を含む）/ make selflint 緑。次の一手: CI の確認 → M1 の完了条件（DEFENSE-001 相当の宣言的ルールで、既存のサンプルがネイティブ版と同じ結果になること）
 
 - 2026-11-19 / Opus（ローカル）+ Qwen: `IRawpacoRule` アダプタと `--rules`。宣言的ルールの一致はノードではなくバイト範囲と開始位置で返るので、`TLintContext.ReportAt`（位置で報告）と、照合器に渡す `Source` プロパティを足した（既存の `Report` は `ReportAt` を呼ぶ形にしたので、ネイティブのルールの出力は変わらない。make test で確認）。宣言的ルールは `--only` / `--exclude` の ID 検査より前に登録する（`SetRuleFilter` は登録済みの ID だけを既知とみなすため）。ネイティブとの ID の衝突は大文字小文字を無視して判定する。ディレクトリ指定は直下の `*.json` を `CompareStr` の名前順で読み、再帰しない。Qwen の実装は 1 回で仕様どおりで、直したのはコンパイラの警告 1 点（管理型の関数結果の初期化）だけ。テストを作る中で、標準出力の診断と標準エラーの通知を混ぜて比べると、バッファリング次第で順序が変わりうることに気づいた（実際に、先に書いた通知が後に出た）。通知のテストは診断の出ない対象に変えた。最初の push（run 44367968374）は Windows で 7 件落ちた。Windows の checkout で `args` が CRLF になり、最後の引数（対象ファイル）に `\r` が付いて開けなかったため。ランナーで `\r` を落とすよう直し、手元で `args` を CRLF にして 14 件通ることを確かめた。結果: make / make test（lint 全体 14 件を含む）/ make selflint 緑。修正後の CI（run 44369045068）は Linux / Windows とも緑（lint 全体 14 件が両方で通過）。次の一手: `message` の `$X` 補間
 

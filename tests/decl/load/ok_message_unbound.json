@@ -1,0 +1,1 @@
+{"rules": [{"id": "T-1", "message": "$X and $...X and $Y and $_ and $Y again", "severity": "WARNING", "languages": ["pascal"], "pattern": "Foo($X, $_)"}]}

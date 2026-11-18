@@ -45,7 +45,7 @@ function LoadAndRegisterDeclRules(const Paths: array of string; Rules: TDeclRule
 implementation
 
 uses
-  PatMatcher;
+  PatMatcher, MsgInterp;
 
 { TDeclRuleAdapter }
 
@@ -80,11 +80,26 @@ end;
 procedure TDeclRuleAdapter.Check(const Node: TSNode; Ctx: TLintContext);
 var
   Matches: TPatMatchArray;
-  I: Integer;
+  I, J: Integer;
+  Keys, Values: TStringArray;
+  B: TMetaVarBinding;
 begin
   Matches := FindMatches(FRule.Compiled.Root, Node, Ctx.Source);
   for I := 0 to High(Matches) do
-    Ctx.ReportAt(FRule.Id, FRule.Severity, FRule.Message, Matches[I].StartPoint);
+  begin
+    Keys := nil;
+    Values := nil;
+    SetLength(Keys, Length(Matches[I].Bindings));
+    SetLength(Values, Length(Matches[I].Bindings));
+    for J := 0 to High(Matches[I].Bindings) do
+    begin
+      B := Matches[I].Bindings[J];
+      Keys[J] := BindingKey(B.Name, B.IsRange);
+      Values[J] := BindingText(B, Ctx.Source);
+    end;
+    Ctx.ReportAt(FRule.Id, FRule.Severity, InterpolateMessage(FRule.Message, Keys, Values),
+      Matches[I].StartPoint);
+  end;
 end;
 
 { ExpandRulePaths }

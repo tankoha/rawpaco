@@ -27,7 +27,7 @@ RULE_SOURCES := src/Diagnostics.pas src/RuleRegistry.pas src/ASTWalker.pas \
                 src/Rules/AllRules.pas \
                 src/Decl/PatLexer.pas src/Decl/PatCompiler.pas \
                 src/Decl/PatMatcher.pas src/Decl/RuleFile.pas \
-                src/Decl/DeclRule.pas
+                src/Decl/DeclRule.pas src/Decl/MsgInterp.pas
 
 .PHONY: all clean test unittest selflint
 
@@ -58,7 +58,7 @@ test: src/rawpaco unittest
 # 単体テストのプログラムで直接確かめる。tree-sitter に依存しない部品だけを
 # 対象にしているため C オブジェクトのリンクは不要。成果物は build/ に閉じ込め、
 # src/Decl に .ppu を残さない。
-UNITTESTS := TestPatLexer
+UNITTESTS := TestPatLexer TestMsgInterp
 
 unittest: | $(BUILD)
 	mkdir -p $(BUILD)/unittest
