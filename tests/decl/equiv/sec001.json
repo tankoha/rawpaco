@@ -1,0 +1,35 @@
+{
+  "rules": [
+    {
+      "id": "DECL-SEC-001",
+      "message": "string concatenation builds SQL from a literal containing a SQL keyword ($LIT); use parameterized queries instead",
+      "severity": "ERROR",
+      "languages": ["pascal"],
+      "metadata": {
+        "equivalent-of": "RAWPACO-SEC-001",
+        "note": "cannot require $OTHER to be a non-literal without metavariable-pattern, so literal + literal is also reported"
+      },
+      "patterns": [
+        {"pattern-either": [{"pattern": "$LIT + $OTHER"}, {"pattern": "$OTHER + $LIT"}]},
+        {"metavariable-regex": {"metavariable": "$LIT", "regex": "'([^']|'')*'$"}},
+        {"metavariable-regex": {"metavariable": "$LIT", "regex": "(?i)'.*\\b(SELECT|INSERT|UPDATE|DELETE|WHERE|FROM)\\b"}}
+      ]
+    },
+    {
+      "id": "DECL-SEC-001-NOLITLIT",
+      "message": "string concatenation builds SQL from a literal containing a SQL keyword ($LIT); use parameterized queries instead",
+      "severity": "ERROR",
+      "languages": ["pascal"],
+      "metadata": {
+        "equivalent-of": "RAWPACO-SEC-001",
+        "note": "variant: drops matches containing literal + literal by text, which also drops real findings inside longer chains"
+      },
+      "patterns": [
+        {"pattern-either": [{"pattern": "$LIT + $OTHER"}, {"pattern": "$OTHER + $LIT"}]},
+        {"metavariable-regex": {"metavariable": "$LIT", "regex": "'([^']|'')*'$"}},
+        {"metavariable-regex": {"metavariable": "$LIT", "regex": "(?i)'.*\\b(SELECT|INSERT|UPDATE|DELETE|WHERE|FROM)\\b"}},
+        {"pattern-not-regex": "'\\s*\\+\\s*'"}
+      ]
+    }
+  ]
+}

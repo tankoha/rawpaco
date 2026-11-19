@@ -1,0 +1,20 @@
+{
+  "rules": [
+    {
+      "id": "DECL-DEFENSE-002",
+      "message": "Assigned() check right after a constructor call is always true and can be removed",
+      "severity": "WARNING",
+      "languages": ["pascal"],
+      "metadata": {
+        "equivalent-of": "RAWPACO-DEFENSE-002",
+        "note": "then-branches are written as ... because $BODY does not match a begin..end block (M2 measurement); the else form is on one line because a lone ... before else gets a ; from PatLexer"
+      },
+      "pattern-either": [
+        {"pattern": "$X := $T.Create(...);\nif Assigned($X) then\n  ...;"},
+        {"pattern": "$X := $T.Create;\nif Assigned($X) then\n  ...;"},
+        {"pattern": "$X := $T.Create(...);\nif Assigned($X) then ... else ...;"},
+        {"pattern": "$X := $T.Create;\nif Assigned($X) then ... else ...;"}
+      ]
+    }
+  ]
+}
