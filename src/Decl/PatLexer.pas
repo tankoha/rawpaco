@@ -117,9 +117,35 @@ var
   // 普通なので、ルール作者に `...;` を求めずに済ませるため。括弧の中（複数行の
   // 引数リストなど）や、同じ行に他のトークンがある場合は補わない（`;` を足すと
   // 式の途中を切ってしまうため）。すでに `;` が付いていれば同じ行なので補わない。
+  // Src[TokEnd] の後ろの最初のトークンが `else` か（空白・改行と `//` のコメントは飛ばす）。
+  function NextTokenIsElse(TokEnd: Integer): Boolean;
+  var
+    k: Integer;
+  begin
+    Result := False;
+    k := TokEnd + 1;
+    while k <= SrcLen do
+    begin
+      if Src[k] in [' ', #9, #13, #10] then
+        Inc(k)
+      else if (Src[k] = '/') and (k + 1 <= SrcLen) and (Src[k + 1] = '/') then
+      begin
+        while (k <= SrcLen) and (Src[k] <> #10) do
+          Inc(k);
+      end
+      else
+        Break;
+    end;
+    Result := (k + 3 <= SrcLen) and (LowerCase(Copy(Src, k, 4)) = 'else') and
+      ((k + 4 > SrcLen) or not (Src[k + 4] in ['A'..'Z', 'a'..'z', '0'..'9', '_']));
+  end;
+
+  // `else` の直前には補わない。`if ... then ... else` では `;` が if を終わらせて
+  // パースできなくなるため（M2 の実測）。`case` の `else` の前の `;` は省略できるので、
+  // 補わなくても困らない。
   procedure AddStatementSemicolon(TokStart, TokEnd: Integer);
   begin
-    if (Depth = 0) and AloneOnLine(TokStart, TokEnd) then
+    if (Depth = 0) and AloneOnLine(TokStart, TokEnd) and not NextTokenIsElse(TokEnd) then
       Dst := Dst + ';';
   end;
 

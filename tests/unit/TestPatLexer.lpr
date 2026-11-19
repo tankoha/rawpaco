@@ -192,11 +192,24 @@ begin
     'A[1];' + #10 + '__rawpaco_ell__;', '', 0, 0,
     '', '', '');
 
+  // `else` の直前には補わない（M2 の実測。`;` が if を終わらせるため）。
+  Check('before else', 'if A then' + #10 + '  ...' + #10 + 'else' + #10 + '  ...', False, True,
+    'if A then' + #10 + '  __rawpaco_ell__' + #10 + 'else' + #10 + '  __rawpaco_ell__;', '', 0, 0,
+    '', '', '');
+
+  Check('before else comment', 'if A then' + #10 + '  $...B' + #10 + '  // c' + #10 + '  ELSE X;', False, True,
+    'if A then' + #10 + '  __rawpaco_mvell_B__' + #10 + '  // c' + #10 + '  ELSE X;', '', 0, 0,
+    '', 'B', '');
+
+  Check('before elsewhere ident', 'Foo;' + #10 + '...' + #10 + 'ElseWhere;', False, True,
+    'Foo;' + #10 + '__rawpaco_ell__;' + #10 + 'ElseWhere;', '', 0, 0,
+    '', '', '');
+
   if Failures > 0 then
   begin
     WriteLn('TestPatLexer: ', Failures, ' failure(s)');
     Halt(1);
   end
   else
-    WriteLn('TestPatLexer: all 29 cases passed');
+    WriteLn('TestPatLexer: all 32 cases passed');
 end.

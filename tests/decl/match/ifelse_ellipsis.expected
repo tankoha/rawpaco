@@ -1,0 +1,4 @@
+tests/decl/match/ifelse_ellipsis.pas:4:3-7:7: if Assigned(A) then
+  $X = A
+tests/decl/match/ifelse_ellipsis.pas:8:3-11:12: if Assigned(B) then begin
+  $X = B

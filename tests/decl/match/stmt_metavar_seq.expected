@@ -1,0 +1,6 @@
+tests/decl/match/stmt_metavar_seq.pas:4:3-5:9: Foo;
+  $S = G := 2
+tests/decl/match/stmt_metavar_seq.pas:6:3-9:7: Foo;
+  $S = begin
+tests/decl/match/stmt_metavar_seq.pas:10:3-11:10: Foo;
+  $S = Baz(1)

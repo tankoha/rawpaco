@@ -292,6 +292,20 @@ begin
 
     pkNode:
     begin
+      // tree-sitter-pascal の `statement` は式の文（呼び出しなど）だけを包み、if・block・
+      // 代入などは包まずにフィールドや並びに直接置く。パターンの `$S;` は `statement` の
+      // 中のメタ変数になるので、そのままでは `begin ... end` や代入に一致しない。opengrep の
+      // `$S;` はどの文にも一致するので、文の位置では包まれていない文にも一致させる。
+      // 包まれた式の文には従来どおり中身を束縛する（既存のルールの束縛を変えないため）。
+      if (P.NodeType = 'statement') and (P.ChildCount = 1) and
+         (P.Children[0].Kind = pkMetaVar) and (string(ts_node_type(T)) <> 'statement') then
+      begin
+        if (string(ts_node_type(T)) = 'pp') or (string(ts_node_type(T)) = 'comment') then
+          Result := False
+        else
+          Result := MatchNode(P.Children[0], T, Source, B);
+        Exit;
+      end;
       if ts_node_symbol(T) <> P.Symbol then
       begin
         Result := False;

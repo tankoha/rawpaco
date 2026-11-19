@@ -1,0 +1,12 @@
+tests/decl/match/stmt_metavar_any.pas:4:3-6:7: if Assigned(A) then begin
+  $X = A
+  $BODY = begin
+tests/decl/match/stmt_metavar_any.pas:7:3-8:7: if Assigned(B) then
+  $X = B
+  $BODY = Y
+tests/decl/match/stmt_metavar_any.pas:9:3-10:12: if Assigned(C) then
+  $X = C
+  $BODY = Z := 1
+tests/decl/match/stmt_metavar_any.pas:11:3-12:17: if Assigned(D) then
+  $X = D
+  $BODY = if E then F;
