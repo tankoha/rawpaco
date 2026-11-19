@@ -1,0 +1,1 @@
+error: tests/decl/load/err_patterns_nested_parse.json: rules[0] (id "T-1"): "patterns"[1]."pattern-either"[1]."pattern": the pattern cannot be parsed as Pascal declarations, statements, an expression or an exception handler

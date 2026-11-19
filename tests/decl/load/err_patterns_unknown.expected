@@ -1,0 +1,1 @@
+error: tests/decl/load/err_patterns_unknown.json: rules[0] (id "T-1"): "patterns"[1]: unknown key "message"

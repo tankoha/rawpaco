@@ -19,7 +19,7 @@ unit RuleFile;
 interface
 
 uses
-  SysUtils, Classes, Diagnostics, PatLexer, PatCompiler;
+  SysUtils, Classes, Diagnostics, PatLexer, PatCompiler, Formula;
 
 type
   TDeclRule = class
@@ -27,19 +27,19 @@ type
     FId: string;
     FMessage: string;
     FSeverity: TSeverity;
-    FCompiled: TPatCompileResult;
+    FFormula: TFormula;
     FLexOptions: TPatLexOptions;
     FGoDeeperStmt: Boolean;
     FSourceFile: string;
   public
-    // Compiled.Root を解放する。
+    // Formula を解放する。
     destructor Destroy; override;
     property Id: string read FId write FId;
     // `$X` の補間前の文字列（補間は M1 の別タスク）。
     property Message: string read FMessage write FMessage;
     property Severity: TSeverity read FSeverity write FSeverity;
-    // Compiled.Ok は常に True。Compiled.Root の所有者はこのオブジェクト。
-    property Compiled: TPatCompileResult read FCompiled write FCompiled;
+    // `pattern` / `patterns` / `pattern-either` を読んだ木（根は正の項）。所有者はこのオブジェクト。
+    property Formula: TFormula read FFormula write FFormula;
     property LexOptions: TPatLexOptions read FLexOptions write FLexOptions;
     // `options: { go_deeper_stmt: false }`（未決 #4 の決定。既定は True）。
     // 効くのは文の並びのパターンを実装する M2 から。
@@ -84,11 +84,11 @@ uses
   fpjson, jsonparser, LintDriver, MsgInterp;
 
 const
-  CAcceptedKeys: array[0..6] of string =
-    ('id', 'message', 'severity', 'languages', 'pattern', 'metadata', 'options');
-  CNotImplKeys: array[0..13] of string =
-    ('patterns', 'pattern-either', 'pattern-not', 'pattern-inside',
-     'pattern-not-inside', 'pattern-regex', 'pattern-not-regex',
+  CAcceptedKeys: array[0..11] of string =
+    ('id', 'message', 'severity', 'languages', 'pattern', 'metadata', 'options',
+     'patterns', 'pattern-either', 'pattern-not', 'pattern-inside', 'pattern-not-inside');
+  CNotImplKeys: array[0..8] of string =
+    ('pattern-regex', 'pattern-not-regex',
      'metavariable-regex', 'metavariable-pattern', 'metavariable-comparison',
      'focus-metavariable', 'paths', 'fix', 'fix-regex');
   COutOfScopeKeys: array[0..15] of string =
@@ -100,8 +100,7 @@ const
 
 destructor TDeclRule.Destroy;
 begin
-  if FCompiled.Root <> nil then
-    FCompiled.Root.Free;
+  FFormula.Free;
   inherited Destroy;
 end;
 
@@ -223,6 +222,123 @@ begin
 end;
 
 
+function KindForKey(const Key: string; out Kind: TFormulaKind): Boolean;
+begin
+  Result := True;
+  Kind := fkPattern;
+  if Key = 'pattern' then
+    Kind := fkPattern
+  else if Key = 'patterns' then
+    Kind := fkPatterns
+  else if Key = 'pattern-either' then
+    Kind := fkEither
+  else if Key = 'pattern-not' then
+    Kind := fkNot
+  else if Key = 'pattern-inside' then
+    Kind := fkInside
+  else if Key = 'pattern-not-inside' then
+    Kind := fkNotInside
+  else
+    Result := False;
+end;
+
+// Value を Kind の演算子の値として読む。Path はエラー表示用の位置
+// （例: `"patterns"[1]."pattern-not"`）。失敗したら F = nil で、ErrMsg は Path から始まる。
+// pattern-either の中に否定や inside を置くのは、opengrep では書けても意味が
+// 分かりにくく、M2 の差分テストで挙動を確かめるまでは受け付けない（CLAUDE.md ルール5）。
+function ParseFormula(Value: TJSONData; Kind: TFormulaKind; const Path: string;
+  const LexOpts: TPatLexOptions; Notices: TStrings; const NoticePrefix: string;
+  out F: TFormula; out ErrMsg: string): Boolean;
+var
+  CR: TPatCompileResult;
+  Arr: TJSONArray;
+  Elem: TJSONObject;
+  I, W: Integer;
+  Key, ElemPath: string;
+  ChildKind: TFormulaKind;
+  Child: TFormula;
+  HasPositive: Boolean;
+begin
+  F := nil;
+  ErrMsg := '';
+  if Kind in [fkPatterns, fkEither] then
+  begin
+    if (Value.JSONType <> jtArray) or (TJSONArray(Value).Count = 0) then
+    begin
+      ErrMsg := Path + ': expected a non-empty array';
+      Exit(False);
+    end;
+    Arr := TJSONArray(Value);
+    F := TFormula.CreateNode(Kind);
+    HasPositive := False;
+    for I := 0 to Arr.Count - 1 do
+    begin
+      ElemPath := Path + '[' + IntToStr(I) + ']';
+      if (Arr.Items[I].JSONType <> jtObject) or (TJSONObject(Arr.Items[I]).Count <> 1) then
+        ErrMsg := ElemPath + ': expected an object with exactly one key'
+      else
+      begin
+        Elem := TJSONObject(Arr.Items[I]);
+        Key := Elem.Names[0];
+        if not KindForKey(Key, ChildKind) then
+        begin
+          // CheckKey が通すのはルールの直下にだけ書けるキー（id など）なので、ここでは未知。
+          if CheckKey(Key, ElemPath, ErrMsg) then
+            ErrMsg := ElemPath + ': unknown key "' + Key + '"';
+        end
+        else if (Kind = fkEither) and not IsPositiveKind(ChildKind) then
+          ErrMsg := ElemPath + ': "' + Key + '" is not allowed in "pattern-either" (only in "patterns")'
+        else if ParseFormula(Elem.Items[0], ChildKind, ElemPath + '."' + Key + '"',
+          LexOpts, Notices, NoticePrefix, Child, ErrMsg) then
+        begin
+          F.AddChild(Child);
+          if IsPositiveKind(ChildKind) then
+            HasPositive := True;
+        end;
+      end;
+      if ErrMsg <> '' then
+      begin
+        FreeAndNil(F);
+        Exit(False);
+      end;
+    end;
+    // 否定と inside だけの patterns は、opengrep でも正の項が必須（設計書 4.4）。
+    if (Kind = fkPatterns) and not HasPositive then
+    begin
+      ErrMsg := Path + ': needs at least one "pattern", "patterns" or "pattern-either"';
+      FreeAndNil(F);
+      Exit(False);
+    end;
+    Exit(True);
+  end;
+
+  if (Value.JSONType <> jtString) or (Value.AsString = '') then
+  begin
+    ErrMsg := Path + ': expected a non-empty string';
+    Exit(False);
+  end;
+  CR := CompilePattern(Value.AsString, LexOpts);
+  if not CR.Ok then
+  begin
+    ErrMsg := Path + ': ' + CR.ErrorMessage;
+    Exit(False);
+  end;
+  if CR.Root.Kind = pkSequence then
+  begin
+    // 照合器（PatMatcher.FindMatches）は文の並びをまだ扱わず空の結果を返す。
+    // 読み込めてしまうと「何も出ない」が安全の意味に読まれるので、ここで止める。
+    CR.Root.Free;
+    ErrMsg := Path + ': a sequence of statements is not supported yet';
+    Exit(False);
+  end;
+  if Notices <> nil then
+    for W := 0 to High(CR.Warnings) do
+      Notices.Add(NoticePrefix + ': warning: ' + CR.Warnings[W]);
+  F := TFormula.CreateLeaf(Kind, CR);
+  Result := True;
+end;
+
+
 // 検査の順序は設計書 4.6 と tests/decl/load の期待値が前提にしている。id を最初に読むのは、
 // 以降のエラーに id を添えて、どのルールかを利用者が探せるようにするため。
 function LoadOneRule(Obj: TJSONObject; const SrcName: string; AIndex: Integer;
@@ -242,8 +358,10 @@ var
   OptObj: TJSONObject;
   LexOpts: TPatLexOptions;
   GoDeeper: Boolean;
-  PatVal: string;
-  CR: TPatCompileResult;
+  FormulaCount, FormulaIdx: Integer;
+  RootKind: TFormulaKind;
+  Form: TFormula;
+  BoundVars, BoundEllipses: TStringArray;
   W: Integer;
   Refs: TMsgVarRefArray;
   Warned: TStringArray;
@@ -446,57 +564,57 @@ begin
     end;
   end;
 
-  Found := False;
+  // ルールの直下に書ける式は `pattern` / `patterns` / `pattern-either` のどれか 1 つ。
+  // 否定と inside は opengrep でも `patterns` の中にしか書けない。
+  FormulaCount := 0;
+  FormulaIdx := -1;
   for I := 0 to Obj.Count - 1 do
   begin
-    if Obj.Names[I] = 'pattern' then
+    Key := Obj.Names[I];
+    if (Key = 'pattern-not') or (Key = 'pattern-inside') or (Key = 'pattern-not-inside') then
     begin
-      Found := True;
-      if (Obj.Items[I].JSONType <> jtString) or (Obj.Items[I].AsString = '') then
-      begin
-        ErrMsg := Prefix + ': "pattern": expected a non-empty string';
-        Exit(False);
-      end;
-      PatVal := Obj.Items[I].AsString;
-      Break;
+      ErrMsg := Prefix + ': "' + Key + '" is only allowed inside "patterns"';
+      Exit(False);
+    end;
+    if (Key = 'pattern') or (Key = 'patterns') or (Key = 'pattern-either') then
+    begin
+      Inc(FormulaCount);
+      FormulaIdx := I;
     end;
   end;
-  if not Found then
+  if FormulaCount = 0 then
   begin
-    ErrMsg := Prefix + ': "pattern" is missing';
+    ErrMsg := Prefix + ': "pattern", "patterns" or "pattern-either" is missing';
     Exit(False);
   end;
-
-  CR := CompilePattern(PatVal, LexOpts);
-  if not CR.Ok then
+  if FormulaCount > 1 then
   begin
-    ErrMsg := Prefix + ': "pattern": ' + CR.ErrorMessage;
+    ErrMsg := Prefix + ': only one of "pattern", "patterns" and "pattern-either" is allowed';
     Exit(False);
   end;
-  if CR.Root.Kind = pkSequence then
+  KindForKey(Obj.Names[FormulaIdx], RootKind);
+  if not ParseFormula(Obj.Items[FormulaIdx], RootKind, '"' + Obj.Names[FormulaIdx] + '"',
+    LexOpts, Notices, Prefix, Form, ErrMsg) then
   begin
-    // 照合器（PatMatcher.FindMatches）は文の並びを M2 まで扱わず空の結果を返す。
-    // 読み込めてしまうと「何も出ない」が安全の意味に読まれるので、ここで止める。
-    CR.Root.Free;
-    ErrMsg := Prefix + ': "pattern": a sequence of statements is not supported yet';
+    ErrMsg := Prefix + ': ' + ErrMsg;
     Exit(False);
   end;
-  for W := 0 to High(CR.Warnings) do
-    if Notices <> nil then
-      Notices.Add(Prefix + ': warning: ' + CR.Warnings[W]);
 
   // message がパターンで束縛されないメタ変数を参照していたら警告する。補間されずに
-  // `$Y` のまま出るのでたぶん書き間違いだが、エラーにはしない。M2 の pattern-either
-  // では片方の枝でだけ束縛される名前が正当にありうるため。
+  // `$Y` のまま出るのでたぶん書き間違いだが、エラーにはしない。pattern-either では
+  // 片方の枝でだけ束縛される名前が正当にありうるため。
+  BoundVars := nil;
+  BoundEllipses := nil;
+  CollectBoundNames(Form, BoundVars, BoundEllipses);
   Refs := FindMessageMetaVars(MsgVal);
   Warned := nil;
   for W := 0 to High(Refs) do
   begin
     if Refs[W].IsEllipsis then
-      RefBound := InArray(Refs[W].Name, CR.MetaVarEllipses)
+      RefBound := InArray(Refs[W].Name, BoundEllipses)
     else
       // `$_` は照合器が束縛しない（PatMatcher.MatchNode）。
-      RefBound := (Refs[W].Name <> '_') and InArray(Refs[W].Name, CR.MetaVars);
+      RefBound := (Refs[W].Name <> '_') and InArray(Refs[W].Name, BoundVars);
     RefText := Copy(MsgVal, Refs[W].StartPos, Refs[W].Len);
     if (not RefBound) and (not InArray(RefText, Warned)) then
     begin
@@ -511,7 +629,7 @@ begin
   Rule.Id := RuleId;
   Rule.Message := MsgVal;
   Rule.Severity := Sev;
-  Rule.Compiled := CR;
+  Rule.Formula := Form;
   Rule.LexOptions := LexOpts;
   Rule.GoDeeperStmt := GoDeeper;
   Rule.SourceFile := SrcName;
@@ -637,11 +755,8 @@ end;
 
 function DumpRules(Rules: TDeclRuleList): string;
 var
-  I, J: Integer;
+  I: Integer;
   R: TDeclRule;
-  Dump: string;
-  Line: string;
-  LineStart: Integer;
 begin
   if Rules.Count = 0 then
   begin
@@ -668,20 +783,7 @@ begin
       Result := Result + ' go_deeper_stmt=true' + #10
     else
       Result := Result + ' go_deeper_stmt=false' + #10;
-    Result := Result + '  pattern:' + #10;
-
-    Dump := PatCompiler.DumpPattern(R.Compiled);
-    LineStart := 1;
-    while LineStart <= Length(Dump) do
-    begin
-      J := LineStart;
-      while (J <= Length(Dump)) and (Dump[J] <> #10) do
-        Inc(J);
-      Line := Copy(Dump, LineStart, J - LineStart);
-      if Line <> '' then
-        Result := Result + '    ' + Line + #10;
-      LineStart := J + 1;
-    end;
+    Result := Result + DumpFormula(R.Formula, 2);
   end;
 end;
 

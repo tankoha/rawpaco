@@ -1,1 +1,1 @@
-{"rules": [{"id": "T-1", "message": "m", "severity": "WARNING", "languages": ["pascal"], "patterns": []}]}
+{"rules": [{"id": "T-1", "message": "m", "severity": "WARNING", "languages": ["pascal"], "pattern-regex": "x"}]}

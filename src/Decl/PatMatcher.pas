@@ -39,6 +39,11 @@ function FindMatches(Pattern: TPatNode; const Root: TSNode; const Source: string
 // 束縛の値をソーステキストとして取り出す（メッセージの $X 補間とデバッグ出力用）。
 function BindingText(const B: TMetaVarBinding; const Source: string): string;
 
+// 2 つの束縛が同じものを指すか（合成の「束縛が両立する」の判定。設計書 4.4）。
+// 単一ノード同士は同じメタ変数の 2 回目の出現と同じ構造比較で、範囲の束縛が絡むときは
+// ソーステキストの完全一致で比べる（照合器の `$...X` の 2 回目以降と同じ。M3 で見直す）。
+function BindingsEquivalent(const A, B: TMetaVarBinding; const Source: string): Boolean;
+
 implementation
 
 type
@@ -606,6 +611,14 @@ end;
 function BindingText(const B: TMetaVarBinding; const Source: string): string;
 begin
   Result := Copy(Source, B.StartByte + 1, B.EndByte - B.StartByte);
+end;
+
+function BindingsEquivalent(const A, B: TMetaVarBinding; const Source: string): Boolean;
+begin
+  if (not A.IsRange) and (not B.IsRange) then
+    Result := NodesEquivalent(A.Node, B.Node, Source)
+  else
+    Result := BindingText(A, Source) = BindingText(B, Source);
 end;
 
 end.

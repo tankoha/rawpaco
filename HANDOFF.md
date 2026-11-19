@@ -193,7 +193,7 @@ AST ダンププログラム（`ts_node_string` ではなくフィールド名�
 
 ルール候補の事前検証（2026-09-28）で得た MODE / MEM / dotted ユニット名の実測結果は、実装に伴って設計書 `docs/RULE_ENGINE_DESIGN.md` の 2.7節（MODE）・2.8節（MEM）・P7（vendoring した依存の一覧と dotted 対応）と、上の該当節に移した。
 
-## opengrep 互換の宣言的ルール層（2026-11-16 方針決定。M1 完了（2026-11-19）、M2 未着手。進捗は progress.md）
+## opengrep 互換の宣言的ルール層（2026-11-16 方針決定。M1 完了（2026-11-19）、M2 作業中。進捗は progress.md）
 
 - 検討と設計は `docs/OPENGREP_RULE_ENGINE_DESIGN.md`（英語・正）/ `_jp.md`。opengrep 本体の取り込み（リンク・外部プロセス・全再実装）は不採用。検索モードのサブセットを FPC で再実装し、tree-sitter-pascal の CST 上で動かす案 (d) をオーナーが採用した
 - タスクの状態・作業ログ・未決事項の決定状況は `progress.md` で管理する（体制: ローカルの Opus が管制・レビュー、ローカルの Qwen が実装）。M0 は完了し、M1 の途中（PatLexer / PatCompiler / PatMatcher まで完了、2026-11-17）。次の一手と残タスクは progress.md の 4章・6章を参照。M1〜M2 の後に続行可否を判断する区切りがある

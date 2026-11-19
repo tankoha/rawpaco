@@ -1,0 +1,11 @@
+tests/decl/cli/combine/target.pas:5:3: warning: List.Free outside Self [DECL-NOT]
+tests/decl/cli/combine/target.pas:12:5: warning: Obj.Free outside Self [DECL-NOT]
+tests/decl/cli/combine/target.pas:8:5: warning: WriteLn inside a for loop over I [DECL-INSIDE]
+tests/decl/cli/combine/target.pas:8:5: warning: WriteLn outside try/finally [DECL-NOT-INSIDE]
+tests/decl/cli/combine/target.pas:14:3: warning: process stops [DECL-EITHER]
+tests/decl/cli/combine/target.pas:15:3: warning: process stops [DECL-EITHER]
+tests/decl/cli/combine/target.pas:18:5: warning: Use(P) is guarded by a nil check on P [DECL-COMPAT]
+tests/decl/cli/combine/target.pas:22:3: warning: Foo with first argument A and last argument 1 [DECL-AND]
+tests/decl/cli/combine/target.pas:24:3: warning: Foo with first argument B and last argument 1 [DECL-AND]
+tests/decl/cli/combine/target.pas:22:3: warning: Foo(A, ...) other than B, but not Foo(A, 2) [DECL-NESTED]
+rc=1

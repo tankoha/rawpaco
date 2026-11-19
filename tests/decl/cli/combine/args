@@ -1,0 +1,1 @@
+--fail-on=warning --only=DECL-NOT,DECL-INSIDE,DECL-NOT-INSIDE,DECL-EITHER,DECL-COMPAT,DECL-AND,DECL-EMPTY-FIRST,DECL-NESTED --rules=tests/decl/cli/combine/rules.json --rules=tests/decl/cli/combine/rules2.json tests/decl/cli/combine/target.pas

@@ -1,0 +1,49 @@
+rule T-1
+  file: tests/decl/load/ok_patterns.json
+  severity: warning
+  message: $X freed, inside $Y
+  options: pascal_hex_dollar=false go_deeper_stmt=true
+  patterns:
+    pattern:
+      wrapper: statement
+      exprDot
+        lhs: $X
+        operator: kDot "."
+        rhs: identifier "Free"
+    pattern-not:
+      wrapper: statement
+      exprDot
+        lhs: identifier "Self"
+        operator: kDot "."
+        rhs: identifier "Free"
+    pattern-inside:
+      wrapper: statement
+      with
+        kWith "with"
+        entity: $Y
+        kDo "do"
+        body: ...
+    pattern-not-inside:
+      wrapper: statement
+      try
+        kTry "try"
+        try: statements
+          ...
+        finally: kFinally "finally"
+        finally: statements
+          ...
+        kEnd "end"
+    pattern-either:
+      pattern:
+        wrapper: statement
+        exprCall
+          entity: identifier "Foo"
+          args: exprArgs
+            $X
+      patterns:
+        pattern:
+          wrapper: statement
+          exprCall
+            entity: identifier "Bar"
+            args: exprArgs
+              $X

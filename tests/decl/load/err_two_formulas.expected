@@ -1,0 +1,1 @@
+error: tests/decl/load/err_two_formulas.json: rules[0] (id "T-1"): only one of "pattern", "patterns" and "pattern-either" is allowed

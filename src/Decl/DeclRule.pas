@@ -45,7 +45,7 @@ function LoadAndRegisterDeclRules(const Paths: array of string; Rules: TDeclRule
 implementation
 
 uses
-  PatMatcher, MsgInterp;
+  PatMatcher, MsgInterp, Formula;
 
 { TDeclRuleAdapter }
 
@@ -84,9 +84,15 @@ var
   Keys, Values: TStringArray;
   B: TMetaVarBinding;
 begin
-  Matches := FindMatches(FRule.Compiled.Root, Node, Ctx.Source);
+  Matches := EvaluateFormula(FRule.Formula, Node, Ctx.Source);
   for I := 0 to High(Matches) do
   begin
+    // 同じ範囲でも束縛の違う一致が複数残りうる（pattern-inside が複数の外側と
+    // 両立したときなど）が、利用者には同じ箇所の重複に見えるので 1 件だけ報告する。
+    // EvaluateFormula が範囲順に並べるので、直前と比べれば足りる。
+    if (I > 0) and (Matches[I].StartByte = Matches[I - 1].StartByte) and
+       (Matches[I].EndByte = Matches[I - 1].EndByte) then
+      Continue;
     Keys := nil;
     Values := nil;
     SetLength(Keys, Length(Matches[I].Bindings));

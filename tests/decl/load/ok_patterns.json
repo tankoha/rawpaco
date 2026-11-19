@@ -1,0 +1,1 @@
+{"rules": [{"id": "T-1", "severity": "WARNING", "languages": ["pascal"], "message": "$X freed, inside $Y", "patterns": [{"pattern": "$X.Free"}, {"pattern-not": "Self.Free"}, {"pattern-inside": "with $Y do ..."}, {"pattern-not-inside": "try\n  ...\nfinally\n  ...\nend;"}, {"pattern-either": [{"pattern": "Foo($X)"}, {"patterns": [{"pattern": "Bar($X)"}]}]}]}]}

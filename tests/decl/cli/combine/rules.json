@@ -1,0 +1,24 @@
+{
+  "rules": [
+    {"id": "DECL-NOT", "message": "$X.Free outside Self", "severity": "WARNING",
+     "languages": ["pascal"],
+     "patterns": [{"pattern": "$X.Free(...)"}, {"pattern-not": "Self.Free(...)"}]},
+    {"id": "DECL-INSIDE", "message": "WriteLn inside a for loop over $I", "severity": "WARNING",
+     "languages": ["pascal"],
+     "patterns": [{"pattern": "WriteLn(...)"}, {"pattern-inside": "for $I := $LO to $HI do ..."}]},
+    {"id": "DECL-NOT-INSIDE", "message": "WriteLn outside try/finally", "severity": "WARNING",
+     "languages": ["pascal"],
+     "patterns": [{"pattern": "WriteLn(...)"},
+                  {"pattern-not-inside": "try\n  ...\nfinally\n  ...\nend;"}]},
+    {"id": "DECL-EITHER", "message": "process stops", "severity": "WARNING",
+     "languages": ["pascal"],
+     "pattern-either": [{"pattern": "Halt(...)"},
+                        {"patterns": [{"pattern": "RunError($N)"}, {"pattern-not": "RunError(0)"}]}]},
+    {"id": "DECL-COMPAT", "message": "Use($P) is guarded by a nil check on $P", "severity": "WARNING",
+     "languages": ["pascal"],
+     "patterns": [{"pattern": "Use($P)"}, {"pattern-inside": "if $P <> nil then ..."}]},
+    {"id": "DECL-AND", "message": "Foo with first argument $X and last argument 1", "severity": "WARNING",
+     "languages": ["pascal"],
+     "patterns": [{"pattern": "Foo($X, ...)"}, {"pattern": "Foo(..., 1)"}]}
+  ]
+}

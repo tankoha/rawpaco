@@ -1,0 +1,12 @@
+{
+  "rules": [
+    {"id": "DECL-EMPTY-FIRST", "message": "must never match: the first positive term matches nothing", "severity": "WARNING",
+     "languages": ["pascal"],
+     "patterns": [{"pattern": "NoSuchCall($X)"}, {"pattern": "Halt(...)"}]},
+    {"id": "DECL-NESTED", "message": "Foo($X, ...) other than B, but not Foo(A, 2)", "severity": "WARNING",
+     "languages": ["pascal"],
+     "patterns": [{"pattern": "Foo(...)"},
+                  {"pattern-either": [{"patterns": [{"pattern": "Foo($X, ...)"}, {"pattern-not": "Foo(B, ...)"}]}]},
+                  {"pattern-not": "Foo(A, 2)"}]}
+  ]
+}

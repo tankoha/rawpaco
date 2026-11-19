@@ -352,6 +352,14 @@ Each leaf returns a set of `(range, bindings)`, and operators combine these sets
 
 Details (in particular evaluation order with multiple `pattern-inside` in `patterns`, and combining `pattern-either` with bindings) have historical special cases in opengrep's implementation [Source-checked: comments in `Match_search_mode.ml`]. These are settled in M2 by the differential tests of Section 7.3.
 
+**M2 boolean combination (implemented 2026-11-19, `src/Decl/Formula.pas`).** Provisional choices, to be checked against opengrep by the differential tests of Section 7.3:
+
+- A rule has exactly one of `pattern`, `patterns`, `pattern-either`. `pattern-not`, `pattern-inside`, `pattern-not-inside` are accepted only directly inside `patterns`; anywhere else (rule level, inside `pattern-either`) they are load errors. Each element of an operator list is an object with exactly one key. Errors name the position, e.g. `"patterns"[1]."pattern-not": ...`
+- Inside `patterns` the terms are applied in this order, regardless of how they are written: positive terms (intersected in written order), then each `pattern-inside` (keeps the positives inside it and adds its bindings), then each `pattern-not-inside`, then each `pattern-not`. Negative terms therefore see bindings inherited from `pattern-inside`
+- Intersecting two positive sets keeps every match of either side whose range lies inside a compatible match of the other side, with the bindings of both merged (the inner match's bindings win on a name clash, which cannot happen for compatible pairs except as equivalent nodes)
+- "Compatible" compares single-node bindings structurally (as for a repeated metavariable) and range bindings (`$...X`) by exact source text
+- Results are sorted by range. Matches with the same range and the same bindings are merged; the same range with different bindings is kept through evaluation (it matters for later negative terms), and the adapter reports one diagnostic per range
+
 ### 4.5 Metavariable Conditions
 
 - `metavariable-regex`: apply the regex to the **source text** of the bound node. Pascal identifiers are case-insensitive, so if a rule author forgets `(?i)`, findings are missed. Whether to make case-insensitivity a rawpaco-specific default for metavariables bound to identifiers is open (Section 10)

@@ -1,0 +1,1 @@
+error: tests/decl/load/err_patterns_no_positive.json: rules[0] (id "T-1"): "patterns": needs at least one "pattern", "patterns" or "pattern-either"

@@ -1,1 +1,1 @@
-error: tests/decl/load/err_planned_key.json: rules[0] (id "T-1"): "patterns" is not supported yet
+error: tests/decl/load/err_planned_key.json: rules[0] (id "T-1"): "pattern-regex" is not supported yet
