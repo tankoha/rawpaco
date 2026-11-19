@@ -163,11 +163,40 @@ begin
     '', MsgE1, 1, 5,
     '', '', '');
 
+  // 行に単独の文の位置の ellipsis には `;` を補う（M2）。
+  Check('stmt ellipsis', 'Foo;' + #10 + '  ...' + #10 + 'Bar;', False, True,
+    'Foo;' + #10 + '  __rawpaco_ell__;' + #10 + 'Bar;', '', 0, 0,
+    '', '', '');
+
+  Check('stmt ellipsis crlf', 'Foo;' + #13#10 + '...' + #13#10 + 'Bar;', False, True,
+    'Foo;' + #13#10 + '__rawpaco_ell__;' + #13#10 + 'Bar;', '', 0, 0,
+    '', '', '');
+
+  Check('stmt mvell', 'Foo;' + #10 + '$...BODY' + #10, False, True,
+    'Foo;' + #10 + '__rawpaco_mvell_BODY__;' + #10, '', 0, 0,
+    '', 'BODY', '');
+
+  Check('ellipsis in parens', 'Foo(' + #10 + '  ...' + #10 + ')', False, True,
+    'Foo(' + #10 + '  __rawpaco_ell__' + #10 + ')', '', 0, 0,
+    '', '', '');
+
+  Check('ellipsis with semicolon', 'Foo;' + #10 + '...;', False, True,
+    'Foo;' + #10 + '__rawpaco_ell__;', '', 0, 0,
+    '', '', '');
+
+  Check('ellipsis shares line', 'X := ...' + #10, False, True,
+    'X := __rawpaco_ell__' + #10, '', 0, 0,
+    '', '', '');
+
+  Check('after brackets close', 'A[1];' + #10 + '...', False, True,
+    'A[1];' + #10 + '__rawpaco_ell__;', '', 0, 0,
+    '', '', '');
+
   if Failures > 0 then
   begin
     WriteLn('TestPatLexer: ', Failures, ' failure(s)');
     Halt(1);
   end
   else
-    WriteLn('TestPatLexer: all 22 cases passed');
+    WriteLn('TestPatLexer: all 29 cases passed');
 end.

@@ -68,6 +68,8 @@ var
   identEnd: Integer;
   ident: string;
   hasLower, allHex: Boolean;
+  // `(` と `[` の入れ子の深さ。文の位置の ellipsis の判定に使う。
+  Depth: Integer;
 
   procedure AppendUnique(var Arr: TStringArray; const S: string);
   var
@@ -86,6 +88,39 @@ var
     Result.ErrorMessage := Msg;
     Result.ErrorLine := ELine;
     Result.ErrorColumn := ECol;
+  end;
+
+  // Src[TokStart..TokEnd] がその行で唯一のトークン（前後は空白だけ）か。
+  function AloneOnLine(TokStart, TokEnd: Integer): Boolean;
+  var
+    k: Integer;
+  begin
+    Result := False;
+    k := TokStart - 1;
+    while (k >= 1) and (Src[k] <> #10) do
+    begin
+      if not (Src[k] in [' ', #9, #13]) then Exit;
+      Dec(k);
+    end;
+    k := TokEnd + 1;
+    while (k <= SrcLen) and (Src[k] <> #10) do
+    begin
+      if not (Src[k] in [' ', #9, #13]) then Exit;
+      Inc(k);
+    end;
+    Result := True;
+  end;
+
+  // 行に単独で書かれた、括弧の外の `...` / `$...X` は文の位置の ellipsis とみなして
+  // `;` を補う。tree-sitter-pascal は文の並びの中の `...` の後ろに `;` が無いと
+  // パースできないが（M1 での実測）、opengrep の他言語のルールは `;` なしで書くのが
+  // 普通なので、ルール作者に `...;` を求めずに済ませるため。括弧の中（複数行の
+  // 引数リストなど）や、同じ行に他のトークンがある場合は補わない（`;` を足すと
+  // 式の途中を切ってしまうため）。すでに `;` が付いていれば同じ行なので補わない。
+  procedure AddStatementSemicolon(TokStart, TokEnd: Integer);
+  begin
+    if (Depth = 0) and AloneOnLine(TokStart, TokEnd) then
+      Dst := Dst + ';';
   end;
 
   procedure AdvanceByte(c: Char);
@@ -110,6 +145,7 @@ begin
   Result.MetaVarEllipses := nil;
 
   Dst := '';
+  Depth := 0;
   i := 1;
   Line := 1;
   Col := 1;
@@ -205,6 +241,7 @@ begin
             Inc(nEnd);
           N := Copy(Src, nStart, nEnd - nStart + 1);
           Dst := Dst + MetaVarEllipsisPrefix + N + PlaceholderSuffix;
+          AddStatementSemicolon(i, nEnd);
           AppendUnique(Result.MetaVarEllipses, N);
           for j := i to nEnd do
             AdvanceByte(Src[j]);
@@ -326,7 +363,10 @@ begin
           Exit;
         end
         else
+        begin
           Dst := Dst + EllipsisPlaceholder;
+          AddStatementSemicolon(i, i + 2);
+        end;
       end
       else
         Dst := Dst + Copy(Src, i, dotCount);
@@ -357,6 +397,10 @@ begin
     end
     else
     begin
+      if Src[i] in ['(', '['] then
+        Inc(Depth)
+      else if (Src[i] in [')', ']']) and (Depth > 0) then
+        Dec(Depth);
       Dst := Dst + Src[i];
       AdvanceByte(Src[i]);
       Inc(i);
