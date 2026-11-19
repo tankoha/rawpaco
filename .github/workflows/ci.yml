@@ -150,13 +150,14 @@ jobs:
 
       # 宣言的ルール層の単体テスト(Makefile の unittest ターゲットと同じもの)。
       # C オブジェクトに依存しない Pascal だけのプログラムなので、上の本体ビルドの
-      # リンカ回避策(-Xe ほか)は不要。
+      # リンカ回避策(-Xe ほか)は不要。TestDeclRegex は FCL の RegExpr を使うので、
+      # 本体ビルドと同じパッケージの検索パス(-Fu$FPC_UNITS_ROOT/*)は要る。
       - name: Run unit tests (declarative rule layer)
         shell: bash
         run: |
           mkdir -p build/unittest
           for t in TestPatLexer TestMsgInterp TestDeclRegex; do
-            fpc -Fusrc/Decl -FUbuild/unittest -FEbuild/unittest tests/unit/$t.lpr
+            fpc -Fusrc/Decl "-Fu$FPC_UNITS_ROOT/*" -FUbuild/unittest -FEbuild/unittest tests/unit/$t.lpr
             ./build/unittest/$t.exe
           done
 
