@@ -328,7 +328,7 @@ begin
       else if Copy(Arg, 1, 2) = '--' then
       begin
         WriteLn(StdErr, 'error: unknown option ', Arg);
-        WriteLn(StdErr, 'usage: rawpaco [--config=<path>] [--format=text|github|json] [--fail-on=error|warning] [--only=<id>[,<id>...] | --exclude=<id>[,<id>...]] [--rules=<file.json|dir> ...] <file.pas> ...');
+        WriteLn(StdErr, 'usage: rawpaco [--config=<path>] [--format=text|github|json] [--fail-on=error|warning|info] [--only=<id>[,<id>...] | --exclude=<id>[,<id>...]] [--rules=<file.json|dir> ...] <file.pas> ...');
         Halt(2);
       end
       else

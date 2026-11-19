@@ -1,0 +1,3 @@
+::notice file=tests/decl/cli/info_text/target.pas,line=2,col=3::[DECL-INFO] List is freed
+::notice file=tests/decl/cli/info_text/target.pas,line=3,col=3::[DECL-LOW] Log call
+rc=1

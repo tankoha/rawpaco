@@ -1,0 +1,4 @@
+{"rules": [
+  {"id": "DECL-INFO", "message": "$X is freed", "severity": "INFO", "languages": ["pascal"], "pattern": "$X.Free(...)"},
+  {"id": "DECL-LOW", "message": "Log call", "severity": "LOW", "languages": ["pascal"], "pattern": "Log(...)"}
+]}

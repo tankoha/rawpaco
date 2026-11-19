@@ -89,7 +89,7 @@ M1 着手前に決めたいもの（★）から順に並べる。決まった�
 
 - [x] `patterns` / `pattern-either` / `pattern-not` / `pattern-inside` / `pattern-not-inside` と範囲演算・束縛の両立判定 → `src/Decl/Formula.pas`（interface は Opus、implementation は Qwen。レビューで Opus がバグ 2 点を修正）。読み込みは `RuleFile.ParseFormula`（Opus）。決めたことは設計書 4.4 に追記。ゴールデン: 読み込み 12 件、lint 全体 1 件（`tests/decl/cli/combine`、ルール 8 本）。Linux / Windows CI 緑（run 44459076403）
 - [ ] 文の並びのパターン（`block` / `statements` / `blockTr`、条件コンパイル指令をまたがない）。`go_deeper_stmt` は既定で有効、入れ子内だけの一致は重要度を一段下げる（#4）。M1 での実測: 文の位置の `...` は後ろに `;` が無いとパースできない（`...;` なら可）。opengrep の他言語のルールは `;` なしで書くことが多いので、PatLexer で補うかルール作者に `...;` を求めるかをここで決める
-- [ ] `svInfo` を `svWarning` の前に追加し、`--fail-on=info` を受け付ける（#6）
+- [x] `svInfo` を `svWarning` の前に追加し、`--fail-on=info` を受け付ける（#6）→ Opus が直接実装。text / json は `info`、github は `::notice`。宣言的ルールの `INFO` / `LOW` を受け付ける。ゴールデン: 読み込み 1 件（`ok_severity_info`、旧 `err_severity_info`）、lint 全体 5 件（`tests/decl/cli/info_*`）
 - [ ] `pattern-regex` / `pattern-not-regex` / `metavariable-regex`
 - [ ] `focus-metavariable`、`TDiagnostic` への終了位置追加
 - [ ] opengrep との差分テスト（regex 葉のみ、Linux CI の任意ジョブ、opengrep バージョン固定）

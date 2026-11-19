@@ -496,12 +496,7 @@ begin
   else if (SevVal = 'WARNING') or (SevVal = 'MEDIUM') then
     Sev := svWarning
   else if (SevVal = 'INFO') or (SevVal = 'LOW') then
-  begin
-    // svInfo（未決 #6 の決定）は M2 で入る。それまで svWarning に寄せると、
-    // ルール作者の意図より重く報告して --fail-on=warning の CI を落としうるので受け付けない。
-    ErrMsg := Prefix + ': "severity": "' + SevVal + '" is not supported yet (svInfo is planned for M2)';
-    Exit(False);
-  end
+    Sev := svInfo
   else
   begin
     ErrMsg := Prefix + ': "severity": unknown value "' + SevVal + '"';
@@ -770,10 +765,7 @@ begin
     R := Rules[I];
     Result := Result + 'rule ' + R.Id + #10;
     Result := Result + '  file: ' + R.SourceFile + #10;
-    if R.Severity = svError then
-      Result := Result + '  severity: error' + #10
-    else
-      Result := Result + '  severity: warning' + #10;
+    Result := Result + '  severity: ' + SeverityName(R.Severity) + #10;
     Result := Result + '  message: ' + R.Message + #10;
     if R.LexOptions.PascalHexDollar then
       Result := Result + '  options: pascal_hex_dollar=true'

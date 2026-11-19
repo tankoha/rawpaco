@@ -381,7 +381,7 @@ Pascal では `$FF` が 16 進リテラルなので、メタ変数をそのま�
 - それ以外のキーはすべて読み込みエラーで、メッセージを 3 種類に分ける: 後のマイルストーンで実装する予定のキー（`patterns`、`pattern-either`、`pattern-regex`、`metavariable-*`、`focus-metavariable`、`paths`、`fix` など）は「まだ未対応」、対象外の機能（`mode`、`pattern-sources` などの taint のキー、`metavariable-type`、`join`、`extract` など）は「対象外」、それ以外は「未知のキー」
 - `id` は空でなく、英数字・`_`・`-`・`.` だけから成ること（`--only` / `--exclude` のカンマ区切りと衝突させないため）。ID の重複は、同じファイルの中でも、読み込み済みのルールとの間でもエラー
 - `languages` は空でない文字列の配列。文字列 `pascal`（完全一致）を含まないルールは通知を出して飛ばす（別名は未決 #10 のまま）
-- `severity` は opengrep と同じく大文字小文字を区別する。`INFO` / `LOW` は `svInfo` が入る M2 まで読み込みエラーにし、`svWarning` には寄せない。ルール作者の意図より重く報告すると `--fail-on=warning` のビルドを落としうるため
+- `severity` は opengrep と同じく大文字小文字を区別する。M1 では `INFO` / `LOW` を `svWarning` に寄せずに読み込みエラーにした（ルール作者の意図より重く報告すると `--fail-on=warning` のビルドを落としうるため）。**M2（2026-11-19）で `svInfo` を `svWarning` の前に追加した**。`INFO` / `LOW` はこれに対応させ、`--fail-on=info` を受け付ける。text / json 形式は `info`、github 形式は `::notice` と出す（GitHub Actions に `info` のコマンドは無い）。組み込みのルールは使わない
 - 文の並びにコンパイルされる `pattern` は M2 まで読み込みエラー。M1 の照合器は文の並びに何も一致させず、空の結果が「安全」と読まれてしまうため
 - 読み込みはファイル単位で全か無か。エラーの形は `<ファイル>: rules[<i>] (id "<id>"): <理由>`
 - 開発者向けオプション `--dump-rules=FILE` で、読み込んだルールとパターン IR を表示する。ゴールデンテストは `tests/decl/load/`

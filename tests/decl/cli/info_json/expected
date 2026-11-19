@@ -1,0 +1,2 @@
+[{ "ruleId" : "DECL-INFO", "file" : "tests/decl/cli/info_text/target.pas", "line" : 2, "column" : 3, "severity" : "info", "message" : "List is freed" }, { "ruleId" : "DECL-LOW", "file" : "tests/decl/cli/info_text/target.pas", "line" : 3, "column" : 3, "severity" : "info", "message" : "Log call" }]
+rc=0

@@ -8,12 +8,15 @@ uses
   SysUtils, Generics.Collections, TSBindings;
 
 type
-  // 設計書4.1.1節。宣言順(svWarning < svError)がそのまま重要度の閾値比較に
+  // 設計書4.1.1節。宣言順(svInfo < svWarning < svError)がそのまま重要度の閾値比較に
   // 使われる(--fail-onのしきい値判定はOrd(Diag.Severity) >= Ord(MinSeverity)
   // で行う)ため、順序を入れ替えてはいけない。各ルールのCSeverity定数が
   // どちらを選ぶかは「対応しない場合の結果の深刻さ」で決める(検知精度への
   // 自信の代わりにしてはならない。設計書4.1.6節)。
-  TSeverity = (svWarning, svError);
+  // svInfo はネイティブのルールでは使わない。宣言的ルールの INFO / LOW と、入れ子の
+  // ブロックの中でだけ見つかった Warning の一致を一段下げた先（OPENGREP_RULE_ENGINE_DESIGN
+  // 4.3 / 4.6、未決 #4・#6 の決定）。
+  TSeverity = (svInfo, svWarning, svError);
 
   // 設計書4節。text=人間向け(既定)、github=GitHub Actions workflow command
   // (PRのdiffにインライン注釈を付ける)、json=他ツール連携向け機械可読形式。
@@ -57,7 +60,7 @@ type
 function ParseOutputFormat(const S: string; out AFormat: TOutputFormat;
   out ErrorMsg: string): Boolean;
 
-// CLI引数の文字列("error"/"warning")を検証しつつ変換する。設計書4.1.3節の
+// CLI引数の文字列("error"/"warning"/"info")を検証しつつ変換する。設計書4.1.3節の
 // `--fail-on=`の値。ParseOutputFormatと同じ方針で、未知の値は黙って無視・
 // 補正せずFalseを返す(CLAUDE.mdルール5)。
 function ParseFailOnLevel(const S: string; out ALevel: TSeverity;
@@ -67,6 +70,9 @@ function ParseFailOnLevel(const S: string; out ALevel: TSeverity;
 // 設計書4.1.3節の`--fail-on`のしきい値判定そのもの。
 function HasDiagnosticAtOrAbove(const Diags: TDiagnosticList;
   MinSeverity: TSeverity): Boolean;
+
+// text / json 形式と --dump-rules での重要度の表記（"error" / "warning" / "info"）。
+function SeverityName(Sev: TSeverity): string;
 
 function FormatDiagnosticText(const Diag: TDiagnostic): string;
 function FormatDiagnosticGithub(const Diag: TDiagnostic): string;
@@ -166,10 +172,12 @@ begin
     ALevel := svError
   else if S = 'warning' then
     ALevel := svWarning
+  else if S = 'info' then
+    ALevel := svInfo
   else
   begin
     ErrorMsg := Format(
-      'unknown --fail-on value: %s (expected error or warning)', [S]);
+      'unknown --fail-on value: %s (expected error, warning, or info)', [S]);
     Result := False;
   end;
 end;
@@ -190,6 +198,7 @@ begin
   case Sev of
     svError:   Result := 'error';
     svWarning: Result := 'warning';
+    svInfo:    Result := 'info';
   else
     Result := 'warning';
   end;
@@ -221,13 +230,21 @@ begin
 end;
 
 function FormatDiagnosticGithub(const Diag: TDiagnostic): string;
+var
+  CmdName: string;
 begin
   // 設計書4.1.5節: Error階層は::error、Warning階層は::warningとGitHub Actions
   // 側のネイティブなコマンド種別を出し分ける(いずれもワークフローコマンド
   // 構文として実在する。actions/toolkit準拠)。これによりPRのdiff表示上でも
   // 赤/黄の視覚的な区別がGitHub側の描画だけで得られる。
+  // GitHub Actions に info という種別は無く、最も軽いのは ::notice（actions/toolkit の
+  // core.notice）なので svInfo はそれに対応させる。
+  if Diag.Severity = svInfo then
+    CmdName := 'notice'
+  else
+    CmdName := SeverityName(Diag.Severity);
   Result := Format('::%s file=%s,line=%d,col=%d::[%s] %s',
-    [SeverityName(Diag.Severity), EscapeGithubProperty(Diag.FileName),
+    [CmdName, EscapeGithubProperty(Diag.FileName),
      Diag.Line, Diag.Column, Diag.RuleId, EscapeGithubData(Diag.Message)]);
 end;
 

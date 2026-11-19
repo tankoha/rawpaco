@@ -1,0 +1,1 @@
+--fail-on=warning --only=DECL-INFO,DECL-LOW --rules=tests/decl/cli/info_text/rules.json tests/decl/cli/info_text/target.pas

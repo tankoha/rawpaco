@@ -1,0 +1,8 @@
+rule T-1
+  file: tests/decl/load/ok_severity_info.json
+  severity: info
+  message: m
+  options: pascal_hex_dollar=false go_deeper_stmt=true
+  pattern:
+    wrapper: statement
+    identifier "Foo"
