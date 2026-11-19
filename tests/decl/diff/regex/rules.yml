@@ -1,0 +1,31 @@
+rules:
+  - id: words
+    languages: [regex]
+    severity: WARNING
+    message: m
+    pattern-regex: Get[A-Z]\w*
+  - id: line_anchor
+    languages: [regex]
+    severity: WARNING
+    message: m
+    pattern-regex: ^\s*end;$
+  - id: dot_no_newline
+    languages: [regex]
+    severity: WARNING
+    message: m
+    pattern-regex: begin.*end
+  - id: zero_length
+    languages: [regex]
+    severity: WARNING
+    message: m
+    pattern-regex: Q*
+  - id: adjacent
+    languages: [regex]
+    severity: WARNING
+    message: m
+    pattern-regex: aa
+  - id: case
+    languages: [regex]
+    severity: WARNING
+    message: m
+    pattern-regex: getvalue

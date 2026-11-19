@@ -1,0 +1,8 @@
+{"rules": [
+  {"id": "MR-SAME-RANGE", "languages": ["pascal"], "severity": "WARNING", "message": "m",
+   "pattern-either": [{"pattern": "Foo($X)"}, {"pattern": "Foo(1)"}]},
+  {"id": "MR-MULTILINE", "languages": ["pascal"], "severity": "WARNING", "message": "m",
+   "pattern-regex": "Bar\\(\\s*\\n\\s*2\\)"},
+  {"id": "MR-NONE", "languages": ["pascal"], "severity": "WARNING", "message": "m",
+   "pattern": "NotCalled()"}
+]}

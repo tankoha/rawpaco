@@ -1,0 +1,2 @@
+error: tests/decl/cli/match_rules_bad/missing.json: cannot read the file
+rc=2

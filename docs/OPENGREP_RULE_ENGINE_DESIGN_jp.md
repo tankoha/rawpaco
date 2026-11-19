@@ -358,7 +358,7 @@ Pascal では `$FF` が 16 進リテラルなので、メタ変数をそのま�
 
 細部（特に `patterns` の中に `pattern-inside` が複数ある場合の評価順、`pattern-either` と束縛の組み合わせ）は opengrep の実装に歴史的な特例がある【ソース確認: `Match_search_mode.ml` のコメント】。M2 で、7.3節の差分テストによって確定させる。
 
-**M2 の論理結合（2026-11-19 実装、`src/Decl/Formula.pas`）。** 以下は暫定の選択で、7.3節の差分テストで opengrep と突き合わせる。
+**M2 の論理結合（2026-11-19 実装、`src/Decl/Formula.pas`）。** 以下は暫定の選択で、7.3節の差分テストで opengrep と突き合わせる。正規表現を葉にして確かめられる部分（正の項どうしの積、`pattern-not-regex`、`pattern-either`、入れ子）は 2026-11-19 に一致を確認した（7.3節）。`pattern-inside`・`pattern-not`・束縛の両立は未確認のまま。
 
 - ルールに書ける式は `pattern`・`patterns`・`pattern-either` のどれか 1 つ。`pattern-not`・`pattern-inside`・`pattern-not-inside` は `patterns` の直下でだけ受け付け、それ以外（ルールの直下、`pattern-either` の中）では読み込みエラーにする。演算子のリストの各要素はキーが 1 つだけのオブジェクト。エラーは位置を添えて出す（例: `"patterns"[1]."pattern-not": ...`）
 - `patterns` の中の項は、書かれた順にかかわらず次の順に適用する: 正の項（書かれた順に積を取る）→ 各 `pattern-inside`（その中にある正の一致を残し、束縛を足す）→ 各 `pattern-not-inside` → 各 `pattern-not`。したがって否定の項は `pattern-inside` から受け継いだ束縛を使える
@@ -490,6 +490,18 @@ M0 の結果（2026-11-17）。freepascal.org の 3.2.2 向け FCL リファレ�
 opengrep は Pascal の構文パターンを実行できないので、パターン照合の互換性は比べられない。比べられるのは**合成の意味論**だけである。葉を `pattern-regex` だけにしたルール（`patterns`、`pattern-either`、`pattern-not`、`pattern-inside` の組み合わせ）は言語に依存しないので、同じルールと同じ `.pas` ファイルを opengrep と rawpaco の両方に通して範囲を比較できる。
 
 これは Linux の CI に任意のジョブとして置き、opengrep のバージョンを固定する。正規表現の方言差が結果に混ざらないよう、テストで使う正規表現は単純なものに限る。opengrep が `languages: [regex]` のルールで合成演算子をどこまで受け付けるかは【未確認】で、M2 の最初に確かめる。
+
+**実装（M2、2026-11-19）。** opengrep は v1.33.1 に固定する（`opengrep_manylinux_x86`、46,517,648 バイト、SHA-256 `46e8133cc490f9f50518061590ce2f6be5a08afaeda034471c0ceda4b3899808`。v2.0.0 は公開 6 日目で Python を外した大きな変更だったので選ばなかった）。LGPL-2.1 だが外部のテスト用ツールとして動かすだけなので rawpaco には影響しない（3章）。`tests/decl/diff/<ケース>/` に `rules.yml`（opengrep の形式、`languages: [regex]`）と `target.pas` を置く。`tools/opengrep-diff.bb` は、ルールを opengrep にはそのまま、rawpaco には `languages` を `[pascal]` に替えて JSON に直して渡し、`(ルール ID, 開始バイト, 終了バイト)` の集合を比べる。rawpaco 側は開発者向けオプション `--match-rules=<file.json>` で報告範囲をバイト単位で出す。診断の出力形式は終了位置を持たず、JSON に足すと fpc-source でのバイト一致の回帰基準が崩れるため、別のオプションにした。意図した違いは理由とともにケースの `expected-diff.txt` に書く。実行は `make opengrep-diff OPENGREP=<パス>`。外部の実行ファイルが要るので `make test` には含めない。
+
+範囲は当初の予定より狭い。rawpaco の `pattern-inside`・`pattern-not-inside`・`pattern-not` は Pascal のパターン文字列しか受け付けないので、正規表現を葉にできない。比べるのは `pattern-regex`、`pattern-not-regex`、`pattern-either`、入れ子の `patterns`、正の項どうしの積である。初回（5 ケース、ルール 27 本）は、意図した違い 1 点を除いてすべて opengrep と一致した:
+
+- 正規表現の葉: バイト位置（多バイトの UTF-8 の後ろを含む）、コメントや文字列の中の一致、行ごとの `^` / `$`、改行をまたがない `.`、重ならない連続した一致、既定で大文字小文字を区別
+- 積: どちらの項が先に書かれていても、一方の一致のうち他方の一致の中にあるものを残す。部分的な重なりは落とす。正の項 3 つでも連鎖する
+- `pattern-not-regex`: どちらかの範囲が他方を含めば正の一致を消し、部分的な重なりは残す。`patterns` の中のどこに書いても効き、入れ子では自分の `patterns` の中だけに効く。複数書けば両方が効く
+- `pattern-either`: 枝の一致をすべて残す（他の一致に含まれるものや部分的に重なるものも）。2 つの枝が同じ範囲に一致したら 1 件にまとめる
+- 意図した違い: 空文字列に一致しうる正規表現について、opengrep は位置 0 に長さ 0 の一致を 1 件報告し、rawpaco は報告しない（4.4 の正規表現の演算子、CLAUDE.md ルール5）
+
+CI にはまだ入れていない。CI のジョブにはスクリプト用の Babashka も要り、固定したダウンロードがもう 1 つ増えるので、オーナーの判断を待つ。
 
 ### 7.4 CI
 

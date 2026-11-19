@@ -4,7 +4,7 @@ program rawpaco;
 
 uses
   SysUtils, Classes, TSBindings, LintDriver, RawpacoConfig, RuleRegistry, Diagnostics,
-  PatLexer, PatCompiler, PatMatcher, RuleFile, DeclRule;
+  PatLexer, PatCompiler, PatMatcher, Formula, RuleFile, DeclRule;
 
 const
   VersionString = '0.0.1-dev';
@@ -216,6 +216,67 @@ begin
   end;
 end;
 
+// 開発者向けオプション: 宣言的ルールの一致を 0 始まりのバイト範囲
+// `<file>:<rule-id>:<開始>-<終了>` で出す。opengrep との差分テスト（設計書 7.3）用。
+// 診断の JSON に終了位置を足すと fpc-source でのバイト一致の回帰基準が崩れるため、
+// 別のオプションにした。同じ範囲は lint 本体と同じく 1 件にまとめる。
+function RunMatchRules(const RulePath: string; const Files: array of string): Integer;
+var
+  Rules: TDeclRuleList;
+  Notices: TStringList;
+  ErrorMessage, Source: string;
+  Parser: TSParser;
+  Tree: PTSTree;
+  Matches: TPatMatchArray;
+  i, r, j: Integer;
+begin
+  Result := 0;
+  Rules := TDeclRuleList.Create;
+  Notices := TStringList.Create;
+  try
+    if not LoadRulesFromFile(RulePath, Rules, Notices, ErrorMessage) then
+    begin
+      WriteLn(StdErr, 'error: ', ErrorMessage);
+      Result := 2;
+      Exit;
+    end;
+    Parser := ts_parser_new;
+    ts_parser_set_language(Parser, tree_sitter_pascal);
+    try
+      for i := 0 to High(Files) do
+      begin
+        if not FileExists(Files[i]) then
+        begin
+          WriteLn(StdErr, 'error: file not found: ', Files[i]);
+          Result := 2;
+          Continue;
+        end;
+        Source := ReadFileAsString(Files[i]);
+        Tree := ts_parser_parse_string(Parser, nil, PAnsiChar(Source), Length(Source));
+        try
+          for r := 0 to Rules.Count - 1 do
+          begin
+            Matches := EvaluateFormula(Rules[r].Formula, ts_tree_root_node(Tree), Source,
+              Rules[r].GoDeeperStmt);
+            for j := 0 to High(Matches) do
+              if (j = 0) or (Matches[j].StartByte <> Matches[j - 1].StartByte) or
+                 (Matches[j].EndByte <> Matches[j - 1].EndByte) then
+                WriteLn(Format('%s:%s:%d-%d', [Files[i], Rules[r].Id,
+                  Matches[j].StartByte, Matches[j].EndByte]));
+          end;
+        finally
+          ts_tree_delete(Tree);
+        end;
+      end;
+    finally
+      ts_parser_delete(Parser);
+    end;
+  finally
+    Notices.Free;
+    Rules.Free;
+  end;
+end;
+
 var
   Parser: TSParser;
   Tree: PTSTree;
@@ -224,7 +285,7 @@ var
   Files: array of string;
   I: Integer;
   Arg, ConfigPath, ConfigError, FilterError, FormatError, FormatStr,
-    FailOnError, FailOnStr, MatchPath: string;
+    FailOnError, FailOnStr, MatchPath, MatchRulesPath: string;
   OnlyIds, ExcludeIds, RulePaths: TStringArray;
   OutFormat: TOutputFormat;
   FailOnLevel: TSeverity;
@@ -278,11 +339,14 @@ begin
     SetLength(Files, 0);
     SetLength(RulePaths, 0);
     MatchPath := '';
+    MatchRulesPath := '';
     for I := 1 to ParamCount do
     begin
       Arg := ParamStr(I);
       if Copy(Arg, 1, 16) = '--match-pattern=' then
         MatchPath := Copy(Arg, 17, MaxInt)
+      else if Copy(Arg, 1, 14) = '--match-rules=' then
+        MatchRulesPath := Copy(Arg, 15, MaxInt)
       else if Copy(Arg, 1, 8) = '--rules=' then
       begin
         // 繰り返し指定できる（設計書 OPENGREP_RULE_ENGINE_DESIGN 4.7）。
@@ -340,10 +404,12 @@ begin
       end;
     end;
 
-    // 開発者向けの --match-pattern は lint 本体の設定やルールの絞り込みと無関係なので、
+    // 開発者向けの --match-pattern / --match-rules は lint 本体の設定やルールの絞り込みと無関係なので、
     // それらの検証より前に分岐する。
     if MatchPath <> '' then
       Halt(RunMatchPattern(MatchPath, Files));
+    if MatchRulesPath <> '' then
+      Halt(RunMatchRules(MatchRulesPath, Files));
 
     if not InitConfig(ConfigPath, ConfigError) then
     begin

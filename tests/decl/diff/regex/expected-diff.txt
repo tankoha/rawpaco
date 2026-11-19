@@ -1,0 +1,4 @@
+# opengrep reports one zero-length match (at offset 0) for a regex that can match the empty
+# string. rawpaco never reports zero-length matches: there is nothing to point at, and a
+# pattern like `Q*` would otherwise flag every file (design 4.6, CLAUDE.md rule 5).
+only-opengrep zero_length 0-0

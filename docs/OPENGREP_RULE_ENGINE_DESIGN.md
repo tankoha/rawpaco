@@ -358,7 +358,7 @@ Each leaf returns a set of `(range, bindings)`, and operators combine these sets
 
 Details (in particular evaluation order with multiple `pattern-inside` in `patterns`, and combining `pattern-either` with bindings) have historical special cases in opengrep's implementation [Source-checked: comments in `Match_search_mode.ml`]. These are settled in M2 by the differential tests of Section 7.3.
 
-**M2 boolean combination (implemented 2026-11-19, `src/Decl/Formula.pas`).** Provisional choices, to be checked against opengrep by the differential tests of Section 7.3:
+**M2 boolean combination (implemented 2026-11-19, `src/Decl/Formula.pas`).** Provisional choices, to be checked against opengrep by the differential tests of Section 7.3. The parts reachable with regex leaves (intersection of positives, `pattern-not-regex`, `pattern-either`, nesting) were confirmed on 2026-11-19 (Section 7.3); `pattern-inside`, `pattern-not` and binding compatibility remain unconfirmed:
 
 - A rule has exactly one of `pattern`, `patterns`, `pattern-either`. `pattern-not`, `pattern-inside`, `pattern-not-inside` are accepted only directly inside `patterns`; anywhere else (rule level, inside `pattern-either`) they are load errors. Each element of an operator list is an object with exactly one key. Errors name the position, e.g. `"patterns"[1]."pattern-not": ...`
 - Inside `patterns` the terms are applied in this order, regardless of how they are written: positive terms (intersected in written order), then each `pattern-inside` (keeps the positives inside it and adds its bindings), then each `pattern-not-inside`, then each `pattern-not`. Negative terms therefore see bindings inherited from `pattern-inside`
@@ -490,6 +490,18 @@ Total 5,000–7,000 lines — as large as or larger than current rawpaco (~5,800
 opengrep cannot run Pascal syntactic patterns, so pattern-matching compatibility cannot be compared. Only **combination semantics** can. Rules whose leaves are only `pattern-regex` (combinations of `patterns`, `pattern-either`, `pattern-not`, `pattern-inside`) are language-independent, so the same rules and `.pas` files can be run through both opengrep and rawpaco and the ranges compared.
 
 Place this as an optional Linux CI job with opengrep pinned. Keep regexes in these tests simple so dialect differences do not leak into results. How far opengrep accepts combination operators in `languages: [regex]` rules is [Unverified] and checked first in M2.
+
+**Implemented (M2, 2026-11-19).** opengrep is pinned at v1.33.1 (`opengrep_manylinux_x86`, 46,517,648 bytes, SHA-256 `46e8133cc490f9f50518061590ce2f6be5a08afaeda034471c0ceda4b3899808`; v2.0.0 was six days old and removed Python, so it was not chosen). It is LGPL-2.1 and only run as an external test tool, so rawpaco is unaffected (Section 3). Each case under `tests/decl/diff/<case>/` holds `rules.yml` (opengrep form, `languages: [regex]`) and `target.pas`. `tools/opengrep-diff.bb` runs the rules through opengrep as written and through rawpaco with `languages` replaced by `[pascal]` (converted to JSON), and compares the sets of `(rule id, start byte, end byte)`. rawpaco's side comes from the developer option `--match-rules=<file.json>`, which prints every reported range in bytes; the diagnostic formats do not carry end positions, and adding them to JSON would break the fpc-source byte-for-byte regression baseline. A case may list intended differences in `expected-diff.txt`, each with its reason. `make opengrep-diff OPENGREP=<path>` runs it; it is not part of `make test` because it needs the external binary.
+
+Scope is narrower than first planned: `pattern-inside`, `pattern-not-inside` and `pattern-not` take only Pascal pattern strings in rawpaco, so they cannot have regex leaves. What is compared is `pattern-regex`, `pattern-not-regex`, `pattern-either`, nested `patterns`, and the intersection of positives. Results of the first run (5 cases, 27 rules), all matching opengrep except one intended difference:
+
+- Regex leaves: byte offsets (including after multi-byte UTF-8), matches inside comments and strings, `^`/`$` per line, `.` not crossing newlines, non-overlapping successive matches, case-sensitive by default
+- Intersection keeps a match of either side that lies inside a match of the other side, regardless of which term is written first; partial overlaps are dropped; three positives chain
+- `pattern-not-regex` removes a positive when either range contains the other, keeps partial overlaps, applies regardless of where it is written in `patterns`, is scoped to its own `patterns` when nested, and several of them combine
+- `pattern-either` keeps all matches of its branches, including ones contained in or partially overlapping another; the same range from two branches is reported once
+- Intended difference: for a regex that can match the empty string, opengrep reports one zero-length match at offset 0; rawpaco reports none (Section 4.4 regex operators, CLAUDE.md rule 5)
+
+Not yet in CI: a CI job would also need Babashka for the script, which is a second pinned download and left for the owner to decide.
 
 ### 7.4 CI
 

@@ -1,0 +1,4 @@
+tests/decl/cli/match_rules/target.pas:MR-SAME-RANGE:19-25
+tests/decl/cli/match_rules/target.pas:MR-SAME-RANGE:44-50
+tests/decl/cli/match_rules/target.pas:MR-MULTILINE:29-40
+rc=0

@@ -92,7 +92,7 @@ M1 着手前に決めたいもの（★）から順に並べる。決まった�
 - [x] `svInfo` を `svWarning` の前に追加し、`--fail-on=info` を受け付ける（#6）→ Opus が直接実装。text / json は `info`、github は `::notice`。宣言的ルールの `INFO` / `LOW` を受け付ける。ゴールデン: 読み込み 1 件（`ok_severity_info`、旧 `err_severity_info`）、lint 全体 5 件（`tests/decl/cli/info_*`）
 - [x] `pattern-regex` / `pattern-not-regex` / `metavariable-regex` → `src/Decl/DeclRegex.pas`（interface と単体テスト 28 件は Opus、implementation は Qwen。レビューで Opus が無限ループを修正）。合成・読み込みへの組み込みは Opus。#5 は「識別子なら既定で大文字小文字を無視」に決定。ゴールデン: 読み込み 11 件、lint 全体 1 件（`tests/decl/cli/regex`）。最初の CI（run 44479844045）は Windows の単体テストで `RegExpr` が見つからず失敗（単体テストのコンパイルに FPC パッケージの検索パスを渡していなかった）。修正後の CI（run 44485744664）は Linux / Windows とも緑
 - [x] `focus-metavariable`、`TDiagnostic` への終了位置追加 → Opus が直接実装（合成・読み込みへの組み込みが中心で、新しいロジックは小さいため）。`TDiagnostic.EndLine` / `EndColumn` と `TLintContext.ReportRange`。既存の出力形式には終了位置を出さない。ゴールデン: 読み込み 6 件、lint 全体 1 件（`tests/decl/cli/focus`）。Linux / Windows CI 緑（run 44488961261）
-- [ ] opengrep との差分テスト（regex 葉のみ、Linux CI の任意ジョブ、opengrep バージョン固定）
+- [x] opengrep との差分テスト → `tools/opengrep-diff.bb`、`tests/decl/diff/`（5 ケース、ルール 27 本）、`make opengrep-diff OPENGREP=<パス>`。opengrep は v1.33.1 に固定（SHA-256 照合済み）。rawpaco 側は開発者向けの `--match-rules` でバイト範囲を出す（ゴールデン 2 件）。`pattern-inside` / `pattern-not` は Pascal のパターンしか取らないので比べられず、比べたのは regex 葉の積・`pattern-not-regex`・`pattern-either`・入れ子。意図した違い 1 点（長さ 0 の一致）を除き全一致。CI への組み込みは未（Babashka の固定ダウンロードが要るためオーナー判断）
 - [ ] fpc-source 全体でクラッシュなし・実行時間・件数の実測
 - [ ] **続行判断（オーナー）**: M1〜M2 の成果を見て M3 に進むか決める
 
@@ -128,6 +128,8 @@ M1 着手前に決めたいもの（★）から順に並べる。決まった�
 ## 6. 作業ログ
 
 新しいものを上に追記する。1 エントリ: 日付 / 担当 / やったこと / 結果（テスト・CI）/ 次の一手。
+
+- 2026-11-19 / Opus（ローカル）: opengrep との差分テスト。比較スクリプトは小さく、ケースの設計が中心なので Opus が書いた。opengrep v1.33.1 の Linux 版をオーナーの了承のうえでスクラッチに置き、サイズと SHA-256 をリリースの記録と照合した。rawpaco 側に開発者向けの `--match-rules` を足した（診断の JSON に終了位置を足すと fpc-source のバイト一致の基準が崩れるため）。`pattern-inside` / `pattern-not` は Pascal のパターンしか取らないので regex 葉では比べられず、範囲は設計書の予定より狭い。初回は 5 ケース・ルール 27 本で、意図した違い 1 点（空文字列に一致しうる正規表現で opengrep が位置 0 に長さ 0 の一致を出す）を除き全一致。M2 で仮に決めた積の対称性、`pattern-not-regex` の「どちらかが含めば消す」、`pattern-either` が重なりを残すことを確認した。結果: make / make test / make selflint 緑、`make opengrep-diff` 緑。CI のジョブは Babashka の固定ダウンロードも要るので未。次の一手: CI への組み込みの判断（オーナー）、fpc-source 全体の実測
 
 - 2026-11-19 / Opus（ローカル）: `focus-metavariable` と診断の終了位置。新しいロジックは「範囲を束縛の範囲に置き換える」だけで、ほとんどが既存の合成・読み込みへの組み込みなので、Qwen に出さず Opus が書いた。決めたこと: `patterns` の直下に 1 個まで、値は `"$X"` 1 個（リスト形式は差分テストまで読み込みエラー）、他のすべての項の後に適用する（否定は元の範囲で判定）、束縛が無い一致と空の `$...X` は落とす。終了位置は `TDiagnostic` に持たせたが、text / github / json には出さない（fpc-source での JSON のバイト一致を回帰の基準にしているため。SARIF で使う）。ゴールデンでは、報告位置が束縛へ移ること、`pattern-not` が元の範囲で効くこと、複数行の束縛、空の範囲が落ちることを確かめた。結果: make / make test / make selflint 緑。push 後の CI（run 44488961261）も Linux / Windows とも緑。次の一手: opengrep との差分テスト
 

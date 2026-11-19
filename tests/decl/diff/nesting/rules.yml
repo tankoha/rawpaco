@@ -1,0 +1,41 @@
+rules:
+  - id: negative_first
+    languages: [regex]
+    severity: WARNING
+    message: m
+    patterns:
+      - pattern-not-regex: FooBar
+      - pattern-regex: Foo\w*
+  - id: inner_negation_scoped
+    languages: [regex]
+    severity: WARNING
+    message: m
+    patterns:
+      - patterns:
+          - pattern-regex: Foo\w*
+          - pattern-not-regex: Qux
+      - pattern-regex: \w*Ba\w
+  - id: outer_negation_after_either
+    languages: [regex]
+    severity: WARNING
+    message: m
+    patterns:
+      - pattern-either:
+          - pattern-regex: Foo\w*
+          - pattern-regex: Qux
+      - pattern-not-regex: Bar
+  - id: multiline_negative
+    languages: [regex]
+    severity: WARNING
+    message: m
+    patterns:
+      - pattern-regex: Get\w+
+      - pattern-not-regex: "begin\\s+x := Get"
+  - id: two_negatives
+    languages: [regex]
+    severity: WARNING
+    message: m
+    patterns:
+      - pattern-regex: \w+Qux
+      - pattern-not-regex: FooQux
+      - pattern-not-regex: BarQux

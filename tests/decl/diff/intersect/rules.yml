@@ -1,0 +1,37 @@
+rules:
+  - id: inner_second
+    languages: [regex]
+    severity: WARNING
+    message: m
+    patterns:
+      - pattern-regex: Foo\w*
+      - pattern-regex: Bar
+  - id: inner_first
+    languages: [regex]
+    severity: WARNING
+    message: m
+    patterns:
+      - pattern-regex: Bar
+      - pattern-regex: Foo\w*
+  - id: partial
+    languages: [regex]
+    severity: WARNING
+    message: m
+    patterns:
+      - pattern-regex: abc
+      - pattern-regex: cde
+  - id: equal
+    languages: [regex]
+    severity: WARNING
+    message: m
+    patterns:
+      - pattern-regex: Foo\w*
+      - pattern-regex: \w*Baz
+  - id: three
+    languages: [regex]
+    severity: WARNING
+    message: m
+    patterns:
+      - pattern-regex: Foo\w*
+      - pattern-regex: Bar\w*
+      - pattern-regex: Baz

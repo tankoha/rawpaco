@@ -30,7 +30,7 @@ RULE_SOURCES := src/Diagnostics.pas src/RuleRegistry.pas src/ASTWalker.pas \
                 src/Decl/DeclRule.pas src/Decl/MsgInterp.pas \
                 src/Decl/Formula.pas src/Decl/DeclRegex.pas
 
-.PHONY: all clean test unittest selflint
+.PHONY: all clean test unittest selflint opengrep-diff
 
 all: src/rawpaco
 
@@ -76,6 +76,13 @@ unittest: | $(BUILD)
 # 5ルール(Warning階層)がこのゲートを静かに素通りするようになる。
 selflint: src/rawpaco
 	./src/rawpaco --fail-on=warning src/*.pas src/Rules/*.pas src/Decl/*.pas src/rawpaco.lpr
+
+# opengrep との差分テスト(設計書 OPENGREP_RULE_ENGINE_DESIGN 7.3)。正規表現を葉にした
+# ルールの論理結合を比べる。opengrep は make test に含めない(外部の実行ファイルが要るため)。
+# OPENGREP には v1.33.1 を指定する(更新するときは tests/decl/diff の結果を見直す)。
+OPENGREP ?= opengrep
+opengrep-diff: src/rawpaco
+	bb tools/opengrep-diff.bb ./src/rawpaco $(OPENGREP) tests/decl/diff/*/
 
 clean:
 	rm -rf $(BUILD)

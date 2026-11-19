@@ -1,0 +1,1 @@
+--match-rules=tests/decl/cli/match_rules_bad/missing.json tests/decl/cli/match_rules/target.pas

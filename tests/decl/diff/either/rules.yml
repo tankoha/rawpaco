@@ -1,0 +1,47 @@
+rules:
+  - id: union
+    languages: [regex]
+    severity: WARNING
+    message: m
+    pattern-either:
+      - pattern-regex: Foo\w*
+      - pattern-regex: Qux
+  - id: overlap_contained
+    languages: [regex]
+    severity: WARNING
+    message: m
+    pattern-either:
+      - pattern-regex: Foo\w*
+      - pattern-regex: Bar
+  - id: overlap_partial
+    languages: [regex]
+    severity: WARNING
+    message: m
+    pattern-either:
+      - pattern-regex: abc
+      - pattern-regex: cde
+  - id: duplicate
+    languages: [regex]
+    severity: WARNING
+    message: m
+    pattern-either:
+      - pattern-regex: Qux
+      - pattern-regex: Q\w\w
+  - id: nested_patterns
+    languages: [regex]
+    severity: WARNING
+    message: m
+    pattern-either:
+      - patterns:
+          - pattern-regex: Foo\w*
+          - pattern-not-regex: FooBar
+      - pattern-regex: Bar
+  - id: either_in_patterns
+    languages: [regex]
+    severity: WARNING
+    message: m
+    patterns:
+      - pattern-either:
+          - pattern-regex: Foo\w*
+          - pattern-regex: Bar\w*
+      - pattern-not-regex: Qux

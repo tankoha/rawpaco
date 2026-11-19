@@ -1,0 +1,36 @@
+rules:
+  - id: neg_inside_pos
+    languages: [regex]
+    severity: WARNING
+    message: m
+    patterns:
+      - pattern-regex: Foo\w*
+      - pattern-not-regex: FooBar
+  - id: neg_covers_pos
+    languages: [regex]
+    severity: WARNING
+    message: m
+    patterns:
+      - pattern-regex: Bar
+      - pattern-not-regex: FooBar\w*
+  - id: neg_partial
+    languages: [regex]
+    severity: WARNING
+    message: m
+    patterns:
+      - pattern-regex: abc
+      - pattern-not-regex: cde
+  - id: neg_equal
+    languages: [regex]
+    severity: WARNING
+    message: m
+    patterns:
+      - pattern-regex: Baz\d
+      - pattern-not-regex: Baz1
+  - id: neg_elsewhere
+    languages: [regex]
+    severity: WARNING
+    message: m
+    patterns:
+      - pattern-regex: Qux
+      - pattern-not-regex: NoSuchText
