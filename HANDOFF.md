@@ -10,7 +10,7 @@
 
 | ID | 内容 | 状態 | 備考 |
 |---|---|---|---|
-| RAWPACO-DEFENSE-001 | 空のexceptハンドラ(例外の握りつぶし)検知 | 実装済み | `src/Rules/RuleDefense001.pas`。設計書P1。positive 3件/negative 4件、`make test`で検証 |
+| RAWPACO-DEFENSE-001 | 空のexceptハンドラ(例外の握りつぶし)検知 | 実装済み | `src/Rules/RuleDefense001.pas`。設計書P1。positive 4件/negative 4件、`make test`で検証。`on E: X do raise;`(投げ直し)は、裸の`raise;`がexceptionHandler直下のERROR(子がkRaiseのみ)になるのを見て報告しない(2026-11-19修正) |
 | RAWPACO-SEC-001 | SQL文字列連結(SQLインジェクションの疑い)検知 | 実装済み | `src/Rules/RuleSec001.pas`。設計書P2。positive 3件/negative 2件。片方だけがSQLキーワードを含むliteralStringで、もう片方が非リテラルの場合のみ検知(両方リテラル/両方非リテラルは対象外) |
 | RAWPACO-SEC-002 | シークレットらしき文字列のハードコード検知 | 実装済み | `src/Rules/RuleSec002.pas`。設計書P3。positive 7件/negative 5件。`identifier := literalString`の単純代入・`Obj.Password := 'x'`のような`exprDot`経由のプロパティ代入(ネスト可、2026-08-04追加)・`declVar`/`declConst`の初期値付き宣言が対象。識別子名は接尾辞一致(単純部分一致だと`TokenList`等を誤検知するため)、値はプレースホルダらしき部分一致で除外 |
 | RAWPACO-DEPR-001 | 自己矛盾する非推奨API使用(同一ファイル内)検知 | 実装済み | `src/Rules/RuleDepr001.pas`。設計書P4。positive 3件/negative 2件。`deprecated`属性付き`declProc`の名前を集め、同一ファイル内の`exprCall`(括弧付き呼び出し)・裸の識別子文(括弧なし呼び出し)と照合。`Obj.Method`のようなクラスメソッド呼び出しは対象外 |
@@ -184,6 +184,7 @@ mORMot2（`mormot.core.*`）と Horse（`Horse.*`）を扱うために必要だ�
   - **差分検証時の落とし穴（Fable5.1が実際に空振りした）**: 旧バイナリをリポジトリ外（scratchpad等）にコピーして**リポジトリ外のcwdで実行すると `data/fpc-rtl-symbols.txt` が見つからず、RAWPACO-DEPR-002 と RAWPACO-HALLUC-001 が黙って無効化される**（探索順は `FPCSymbols.FindDataFile`: 環境変数 → exe と同階層の `data/` → exe の `../data/` → cwd の `data/`）。両バイナリが同じように無効化されるので diff は一致してしまい、2ルール分を検証できていないことに気づけない。**`RAWPACO_DATA_DIR` を明示するか、リポジトリルートを cwd にして実行すること**（今回の検証は後者で、診断43件中に DEPR-002 8件・HALLUC-001 6件が含まれていることを確認済み）。
   - 関連する改善案（未実施）: `FPCSymbolsAvailable` が False のとき stderr に一言出す。現状は2ルールが静かに無効化されるだけで、`rawpaco.json` の未知キーを黙って無視しないという方針（CLAUDE.mdルール5）と整合していない。挙動変更になるので別途判断。
   - このときのルール別内訳は **STYLE-001=25254 / SEC-001=255 / DEPR-001=85 / DEFENSE-001=68 / SEC-002=60 / DEPR-002=33 / DEFENSE-002=4 / HALLUC-001=0 / STYLE-002=0**。STYLE-001 の25254件と DEPR-002 の33件、HALLUC-001・STYLE-002 のゼロ件は、いずれも本ファイルに記録されている過去セッションの実測値と完全に一致しており、コーパスと判定の両方が当時から変わっていないことの裏付けになる（今後リグレッションの基準値として使える）。
+  - **DEFENSE-001 の基準値は 2026-11-19 に 68 → 57 に変わった**。`on E: X do raise;`（投げ直し）を空のハンドラと誤検知していた 11 件を直したため。同日の実測で他のルールの件数は上の値と同じ（MEM-001=10 / MEM-002=48 / MODE-001=45 も再現）。
 - `Makefile` の `RULE_SOURCES` に追記済み（依存として列挙されていないとソース変更時に再ビルドされない）。ルールユニットではないため `src/Rules/AllRules.pas` の `uses` には追加しない。
 
 ## 検証用プローブ（AST ダンプ）
@@ -202,7 +203,7 @@ AST ダンププログラム（`ts_node_string` ではなくフィールド名�
   - `fcl-yaml` は FPC 3.2.2 に含まれない（実機確認）。YAML は設計書どおり JSON 先行＋自作サブセット
   - TSBindings に足す `ts_node_is_named` / `is_missing` / `is_extra`（`bool`）、`ts_node_eq(TSNode, TSNode)`（`bool`）、`ts_node_symbol`（`TSSymbol` = `uint16_t` → `Word`）は `api.h` と照合済み
 - 設計書の【実測】は vendor のソースを gcc でビルドした検証プログラムによるもの。M1 で rawpaco 本体（fpc）に組み込んだ部分は、`make test` のゴールデンテストと CI（Linux / Windows）で確認している
-- **M1 の完了時に見つけた、ネイティブ RAWPACO-DEFENSE-001 の誤検知（未修正、2026-11-19）**: `on E: X do raise;`（投げ直し）を「本体が空のハンドラ」と報告する。裸の `raise;` が extra な ERROR になり、`exceptionHandler` の body フィールドが `;` トークンだけになるため。fpc-source 全体の 68 件のうち 11 件がこれ（つまり DEFENSE-001 の正しい基準値は 57 件）。再現は `tests/decl/equiv/reraise_handler.pas`。直すと基準値が変わるので、修正はオーナー判断。宣言的ルールの同等品（`tests/decl/equiv/defense001.json`）はこれを正しく報告しない
+- M1 の DEFENSE-001 比較の残差: fpc-source 全体でネイティブ 57 件・宣言的 53 件。差の 4 件は、ファイルの大部分が 1 つの extra な ERROR になった領域の中の本物の空の except で、宣言的エンジンは方針（エラーの中は照合しない）どおり飛ばす。比較の途中で見つけたネイティブ側の `do raise;` の誤検知 11 件は 2026-11-19 に修正済み
 
 ## 自前の CFG・データフロー解析エンジン（2026-11-17 設計のみ。オーナー判断待ち、実装未着手）
 

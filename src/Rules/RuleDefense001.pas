@@ -122,6 +122,28 @@ begin
         ExceptChildren[I]);
 end;
 
+// `on E: X do raise;` の引数なし `raise;` を tree-sitter-pascal(v0.10.2) は
+// パースできず、exceptionHandler の子として「kRaise だけを子に持つ ERROR」を
+// body(`;`)の直前に置く。body だけを見ると空のハンドラに見えるが、実際は
+// 例外を投げ直しているので握りつぶしではない。宣言的ルール側の
+// PatCompiler.IsBareRaiseError と同じ形を見るが、ネイティブルールを Decl
+// ユニットに依存させないためここに持つ。
+function HasBareRaiseChild(const Node: TSNode): Boolean;
+var
+  I, Cnt: Integer;
+  Child: TSNode;
+begin
+  Result := False;
+  Cnt := ts_node_child_count(Node);
+  for I := 0 to Cnt - 1 do
+  begin
+    Child := ts_node_child(Node, I);
+    if (ts_node_type(Child) = 'ERROR') and (ts_node_child_count(Child) = 1) and
+       (ts_node_type(ts_node_child(Child, 0)) = 'kRaise') then
+      Exit(True);
+  end;
+end;
+
 procedure TRuleDefense001.CheckExceptionHandler(const Node: TSNode; Ctx: TLintContext);
 var
   BodyNode: TSNode;
@@ -130,7 +152,7 @@ begin
     Exit; // 文法上bodyは必ず存在するはずだが、将来の文法変更やエラー
           // ノードに備え、見つからない場合は何もしない(CLAUDE.mdルール5)。
 
-  if ts_node_type(BodyNode) = ';' then
+  if (ts_node_type(BodyNode) = ';') and not HasBareRaiseChild(Node) then
     // 報告位置はハンドラノード自体(`on ... do`節)。裸の`;`トークンを
     // 直接指すより、人間が読める文脈を示せる。
     Ctx.Report(CRuleId, CSeverity,
