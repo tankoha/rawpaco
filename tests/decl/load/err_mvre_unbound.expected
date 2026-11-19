@@ -1,0 +1,1 @@
+error: tests/decl/load/err_mvre_unbound.json: rules[0] (id "T-1"): "patterns"[1]."metavariable-regex": $OTHER is not bound by the other terms of "patterns"

@@ -1,0 +1,1 @@
+error: tests/decl/load/err_mvre_bad_name.json: rules[0] (id "T-1"): "patterns"[1]."metavariable-regex": "metavariable": expected a metavariable such as "$X"

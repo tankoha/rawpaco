@@ -1,0 +1,1 @@
+error: tests/decl/load/err_regex_lookahead.json: rules[0] (id "T-1"): "pattern-regex": invalid or unsupported regex: TRegExpr compile: unrecognized modifier (pos 5)

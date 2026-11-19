@@ -1,0 +1,1 @@
+error: tests/decl/load/err_not_regex_in_either.json: rules[0] (id "T-1"): "pattern-either"[1]: "pattern-not-regex" is not allowed in "pattern-either" (only in "patterns")

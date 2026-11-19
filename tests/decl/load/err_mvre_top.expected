@@ -1,0 +1,1 @@
+error: tests/decl/load/err_mvre_top.json: rules[0] (id "T-1"): "metavariable-regex" is only allowed inside "patterns"

@@ -81,15 +81,15 @@ function DumpRules(Rules: TDeclRuleList): string;
 implementation
 
 uses
-  fpjson, jsonparser, LintDriver, MsgInterp;
+  fpjson, jsonparser, RegExpr, LintDriver, MsgInterp, DeclRegex;
 
 const
-  CAcceptedKeys: array[0..11] of string =
+  CAcceptedKeys: array[0..14] of string =
     ('id', 'message', 'severity', 'languages', 'pattern', 'metadata', 'options',
-     'patterns', 'pattern-either', 'pattern-not', 'pattern-inside', 'pattern-not-inside');
-  CNotImplKeys: array[0..8] of string =
-    ('pattern-regex', 'pattern-not-regex',
-     'metavariable-regex', 'metavariable-pattern', 'metavariable-comparison',
+     'patterns', 'pattern-either', 'pattern-not', 'pattern-inside', 'pattern-not-inside',
+     'pattern-regex', 'pattern-not-regex', 'metavariable-regex');
+  CNotImplKeys: array[0..5] of string =
+    ('metavariable-pattern', 'metavariable-comparison',
      'focus-metavariable', 'paths', 'fix', 'fix-regex');
   COutOfScopeKeys: array[0..15] of string =
     ('mode', 'pattern-sources', 'pattern-sinks', 'pattern-sanitizers',
@@ -222,6 +222,19 @@ begin
 end;
 
 
+// `$` + 英大文字か `_` + 英大文字・数字・`_` の並び（パターン側の PatLexer と同じ規則）。
+function IsMetaVarName(const S: string): Boolean;
+var
+  I: Integer;
+begin
+  Result := (Length(S) >= 2) and (S[1] = '$') and (S[2] in ['A'..'Z', '_']);
+  if not Result then
+    Exit;
+  for I := 3 to Length(S) do
+    if not (S[I] in ['A'..'Z', '0'..'9', '_']) then
+      Exit(False);
+end;
+
 function KindForKey(const Key: string; out Kind: TFormulaKind): Boolean;
 begin
   Result := True;
@@ -238,8 +251,89 @@ begin
     Kind := fkInside
   else if Key = 'pattern-not-inside' then
     Kind := fkNotInside
+  else if Key = 'pattern-regex' then
+    Kind := fkRegex
+  else if Key = 'pattern-not-regex' then
+    Kind := fkNotRegex
+  else if Key = 'metavariable-regex' then
+    Kind := fkMetaVarRegex
   else
     Result := False;
+end;
+
+// metavariable-regex の値 {"metavariable": "$X", "regex": "..."} を読む。正規表現は
+// 大文字小文字を区別する版と無視する版の 2 つを作る（未決 #5 の決定。どちらを使うかは
+// 照合時に束縛の種類で決まる）。
+function ParseMetaVarRegex(Value: TJSONData; const Path: string; out F: TFormula;
+  out ErrMsg: string): Boolean;
+var
+  Obj: TJSONObject;
+  I: Integer;
+  MetaVarVal, RegexVal: string;
+  HasMetaVar, HasRegex: Boolean;
+  Re, ReCI: TRegExpr;
+begin
+  F := nil;
+  ErrMsg := '';
+  Result := False;
+  if Value.JSONType <> jtObject then
+  begin
+    ErrMsg := Path + ': expected an object with "metavariable" and "regex"';
+    Exit;
+  end;
+  Obj := TJSONObject(Value);
+  HasMetaVar := False;
+  HasRegex := False;
+  MetaVarVal := '';
+  RegexVal := '';
+  for I := 0 to Obj.Count - 1 do
+  begin
+    if (Obj.Names[I] = 'metavariable') and (Obj.Items[I].JSONType = jtString) then
+    begin
+      MetaVarVal := Obj.Items[I].AsString;
+      HasMetaVar := True;
+    end
+    else if (Obj.Names[I] = 'regex') and (Obj.Items[I].JSONType = jtString) then
+    begin
+      RegexVal := Obj.Items[I].AsString;
+      HasRegex := True;
+    end
+    else if (Obj.Names[I] = 'metavariable') or (Obj.Names[I] = 'regex') then
+    begin
+      ErrMsg := Path + ': "' + Obj.Names[I] + '": expected a string';
+      Exit;
+    end
+    else
+    begin
+      ErrMsg := Path + ': unknown key "' + Obj.Names[I] + '"';
+      Exit;
+    end;
+  end;
+  if not (HasMetaVar and HasRegex) then
+  begin
+    ErrMsg := Path + ': expected an object with "metavariable" and "regex"';
+    Exit;
+  end;
+  if not IsMetaVarName(MetaVarVal) then
+  begin
+    ErrMsg := Path + ': "metavariable": expected a metavariable such as "$X"';
+    Exit;
+  end;
+  Re := CompileRuleRegex(RegexVal, False, ErrMsg);
+  if Re = nil then
+  begin
+    ErrMsg := Path + ': "regex": ' + ErrMsg;
+    Exit;
+  end;
+  ReCI := CompileRuleRegex(RegexVal, True, ErrMsg);
+  if ReCI = nil then
+  begin
+    Re.Free;
+    ErrMsg := Path + ': "regex": ' + ErrMsg;
+    Exit;
+  end;
+  F := TFormula.CreateRegex(fkMetaVarRegex, RegexVal, Re, ReCI, Copy(MetaVarVal, 2, Length(MetaVarVal) - 1));
+  Result := True;
 end;
 
 // Value を Kind の演算子の値として読む。Path はエラー表示用の位置
@@ -258,6 +352,9 @@ var
   ChildKind: TFormulaKind;
   Child: TFormula;
   HasPositive: Boolean;
+  BoundVars, BoundEllipses: TStringArray;
+  Re: TRegExpr;
+  ReErr: string;
 begin
   F := nil;
   ErrMsg := '';
@@ -302,20 +399,52 @@ begin
         Exit(False);
       end;
     end;
+    // metavariable-regex の名前は、同じ patterns の正の項か inside で束縛されなければ
+    // ならない。束縛されない名前の条件は常に一致を落とすので、たぶん書き間違い。
+    if Kind = fkPatterns then
+    begin
+      BoundVars := nil;
+      BoundEllipses := nil;
+      CollectBoundNames(F, BoundVars, BoundEllipses);
+      for I := 0 to F.ChildCount - 1 do
+        if (F.Children[I].Kind = fkMetaVarRegex) and
+           not InArray(F.Children[I].MetaVar, BoundVars) and
+           not InArray(F.Children[I].MetaVar, BoundEllipses) then
+        begin
+          ErrMsg := Path + '[' + IntToStr(I) + ']."metavariable-regex": $' + F.Children[I].MetaVar +
+            ' is not bound by the other terms of "patterns"';
+          FreeAndNil(F);
+          Exit(False);
+        end;
+    end;
     // 否定と inside だけの patterns は、opengrep でも正の項が必須（設計書 4.4）。
     if (Kind = fkPatterns) and not HasPositive then
     begin
-      ErrMsg := Path + ': needs at least one "pattern", "patterns" or "pattern-either"';
+      ErrMsg := Path + ': needs at least one "pattern", "patterns", "pattern-either" or "pattern-regex"';
       FreeAndNil(F);
       Exit(False);
     end;
     Exit(True);
   end;
 
+  if Kind = fkMetaVarRegex then
+    Exit(ParseMetaVarRegex(Value, Path, F, ErrMsg));
+
   if (Value.JSONType <> jtString) or (Value.AsString = '') then
   begin
     ErrMsg := Path + ': expected a non-empty string';
     Exit(False);
+  end;
+  if Kind in [fkRegex, fkNotRegex] then
+  begin
+    Re := CompileRuleRegex(Value.AsString, False, ReErr);
+    if Re = nil then
+    begin
+      ErrMsg := Path + ': ' + ReErr;
+      Exit(False);
+    end;
+    F := TFormula.CreateRegex(Kind, Value.AsString, Re, nil, '');
+    Exit(True);
   end;
   CR := CompilePattern(Value.AsString, LexOpts);
   if not CR.Ok then
@@ -558,12 +687,14 @@ begin
   for I := 0 to Obj.Count - 1 do
   begin
     Key := Obj.Names[I];
-    if (Key = 'pattern-not') or (Key = 'pattern-inside') or (Key = 'pattern-not-inside') then
+    if (Key = 'pattern-not') or (Key = 'pattern-inside') or (Key = 'pattern-not-inside') or
+       (Key = 'pattern-not-regex') or (Key = 'metavariable-regex') then
     begin
       ErrMsg := Prefix + ': "' + Key + '" is only allowed inside "patterns"';
       Exit(False);
     end;
-    if (Key = 'pattern') or (Key = 'patterns') or (Key = 'pattern-either') then
+    if (Key = 'pattern') or (Key = 'patterns') or (Key = 'pattern-either') or
+       (Key = 'pattern-regex') then
     begin
       Inc(FormulaCount);
       FormulaIdx := I;
@@ -571,12 +702,12 @@ begin
   end;
   if FormulaCount = 0 then
   begin
-    ErrMsg := Prefix + ': "pattern", "patterns" or "pattern-either" is missing';
+    ErrMsg := Prefix + ': "pattern", "patterns", "pattern-either" or "pattern-regex" is missing';
     Exit(False);
   end;
   if FormulaCount > 1 then
   begin
-    ErrMsg := Prefix + ': only one of "pattern", "patterns" and "pattern-either" is allowed';
+    ErrMsg := Prefix + ': only one of "pattern", "patterns", "pattern-either" and "pattern-regex" is allowed';
     Exit(False);
   end;
   KindForKey(Obj.Names[FormulaIdx], RootKind);

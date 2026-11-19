@@ -1,1 +1,1 @@
-error: tests/decl/load/err_pattern_missing.json: rules[0] (id "T-1"): "pattern", "patterns" or "pattern-either" is missing
+error: tests/decl/load/err_pattern_missing.json: rules[0] (id "T-1"): "pattern", "patterns", "pattern-either" or "pattern-regex" is missing

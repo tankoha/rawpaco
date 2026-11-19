@@ -365,10 +365,11 @@ Details (in particular evaluation order with multiple `pattern-inside` in `patte
 - Intersecting two positive sets keeps every match of either side whose range lies inside a compatible match of the other side, with the bindings of both merged (the inner match's bindings win on a name clash, which cannot happen for compatible pairs except as equivalent nodes)
 - "Compatible" compares single-node bindings structurally (as for a repeated metavariable) and range bindings (`$...X`) by exact source text
 - Results are sorted by range. Matches with the same range and the same bindings are merged; the same range with different bindings is kept through evaluation (it matters for later negative terms), and the adapter reports one diagnostic per range
+- **Regex operators (implemented in M2, 2026-11-19, `src/Decl/DeclRegex.pas`).** `pattern-regex` is a positive term (allowed at rule level, in `patterns` and in `pattern-either`); it matches the raw file text, including comments and strings as in opengrep, has no bindings, and never reports zero-length matches. `pattern-not-regex` (only in `patterns`) removes a positive match when either range contains the other, since text matches rarely line up with syntax boundaries. `metavariable-regex` (only in `patterns`, value `{"metavariable": "$X", "regex": "..."}`) is applied after `pattern-inside` and before the negative terms; its metavariable must be bound by another term of the same `patterns` (load error otherwise), the regex is anchored at the start of the bound text, and case handling follows #5 (Section 4.5). Regexes run with `.` not matching newlines and `^` / `$` matching at line boundaries, as in PCRE2; named groups are rejected by `RegExpr` itself, so `pattern-regex` binds no metavariables yet
 
 ### 4.5 Metavariable Conditions
 
-- `metavariable-regex`: apply the regex to the **source text** of the bound node. Pascal identifiers are case-insensitive, so if a rule author forgets `(?i)`, findings are missed. Whether to make case-insensitivity a rawpaco-specific default for metavariables bound to identifiers is open (Section 10)
+- `metavariable-regex`: apply the regex to the **source text** of the bound node. Pascal identifiers are case-insensitive, so if a rule author forgets `(?i)`, findings are missed. **Decided (#5, 2026-11-19): when the binding is a single `identifier` node, the regex ignores case by default**, a rawpaco-specific difference from opengrep. Other bindings (string literals, other expressions, `$...X` ranges) are matched case-sensitively. The regex must match from the start of the bound text (it is anchored at the start, not at the end), and a match whose metavariable is not bound is dropped
 - `metavariable-pattern`: evaluate a nested formula against the bound node's subtree
 - `metavariable-comparison`: M4. Only metavariables bound to integer and string literals; operations limited to comparisons, arithmetic, `and` / `or` / `not`, and `int()` / `str()` / `len()`; anything else is a load error
 
@@ -530,7 +531,7 @@ Build and test on both Linux and Windows (rule 7). Windows is a 32-bit build, so
 2. ~~**Language and location of this document**~~: **Settled (2026-11-16).** Follows the convention: this English file is canonical, the Japanese one is `_jp`
 3. ~~**`$ABC`-style metavariables**~~: **Settled (2026-11-17).** Load error by default; per-rule `options: { pascal_hex_dollar: true }` treats them as hex literals with a warning (Section 4.2)
 4. ~~**Default for `go_deeper_stmt`**~~: **Settled (2026-11-17).** On by default; matches found only inside nested blocks are reported one severity level lower; `options: { go_deeper_stmt: false }` turns it off (Section 4.3)
-5. **`metavariable-regex` on identifiers**: case-insensitive by default?
+5. ~~**`metavariable-regex` on identifiers**~~: **Decided (2026-11-19).** When the binding is a single identifier node, the regex ignores case by default (a deliberate difference from opengrep). Other bindings (string literals, expressions, `$...X` ranges) stay case-sensitive (Section 4.5)
 6. ~~**`severity`**~~: **Settled (2026-11-17).** Add `svInfo` (needed from M2 by #4)
 7. **YAML**: JSON first + own subset, or vendor libyaml?
 8. ~~**Regex**~~: **Settled (2026-11-17).** Start with `RegExpr`; unsupported constructs are load errors; re-evaluate at the start of M2 (Section 4.6)

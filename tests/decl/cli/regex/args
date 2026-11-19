@@ -1,0 +1,1 @@
+--fail-on=warning --only=DECL-RE,DECL-RE-NOT,DECL-MVRE-ID,DECL-MVRE-STR --rules=tests/decl/cli/regex/rules.json tests/decl/cli/regex/target.pas

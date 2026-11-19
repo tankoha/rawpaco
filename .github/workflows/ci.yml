@@ -155,7 +155,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p build/unittest
-          for t in TestPatLexer TestMsgInterp; do
+          for t in TestPatLexer TestMsgInterp TestDeclRegex; do
             fpc -Fusrc/Decl -FUbuild/unittest -FEbuild/unittest tests/unit/$t.lpr
             ./build/unittest/$t.exe
           done

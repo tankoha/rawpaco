@@ -1,0 +1,7 @@
+tests/decl/cli/regex/target.pas:3:6: warning: leftover marker [DECL-RE]
+tests/decl/cli/regex/target.pas:11:21: warning: leftover marker [DECL-RE]
+tests/decl/cli/regex/target.pas:4:3: warning: WriteLn that is not debug output [DECL-RE-NOT]
+tests/decl/cli/regex/target.pas:6:3: warning: getter call GetValue [DECL-MVRE-ID]
+tests/decl/cli/regex/target.pas:7:3: warning: getter call getvalue [DECL-MVRE-ID]
+tests/decl/cli/regex/target.pas:9:3: warning: error log 'error' [DECL-MVRE-STR]
+rc=1

@@ -1,0 +1,22 @@
+rule T-1
+  file: tests/decl/load/ok_regex.json
+  severity: warning
+  message: m
+  options: pascal_hex_dollar=false go_deeper_stmt=true
+  patterns:
+    pattern:
+      wrapper: statement
+      exprCall
+        entity: identifier "Log"
+        args: exprArgs
+          $MSG
+    metavariable-regex: $MSG "^'err"
+    pattern-not-regex: "debug"
+    pattern-either:
+      pattern-regex: "Log[(]"
+      pattern:
+        wrapper: statement
+        exprCall
+          entity: identifier "Log"
+          args: exprArgs
+            $...A

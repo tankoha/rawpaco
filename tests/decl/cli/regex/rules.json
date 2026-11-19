@@ -1,0 +1,10 @@
+{"rules": [
+  {"id": "DECL-RE", "message": "leftover marker", "severity": "WARNING", "languages": ["pascal"],
+   "pattern-regex": "TODO|FIXME"},
+  {"id": "DECL-RE-NOT", "message": "WriteLn that is not debug output", "severity": "WARNING", "languages": ["pascal"],
+   "patterns": [{"pattern": "WriteLn(...)"}, {"pattern-not-regex": "debug"}]},
+  {"id": "DECL-MVRE-ID", "message": "getter call $FN", "severity": "WARNING", "languages": ["pascal"],
+   "patterns": [{"pattern": "$FN(...)"}, {"metavariable-regex": {"metavariable": "$FN", "regex": "Get"}}]},
+  {"id": "DECL-MVRE-STR", "message": "error log $S", "severity": "WARNING", "languages": ["pascal"],
+   "patterns": [{"pattern": "Log($S)"}, {"metavariable-regex": {"metavariable": "$S", "regex": "'err"}}]}
+]}

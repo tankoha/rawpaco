@@ -13,7 +13,7 @@ unit Formula;
 interface
 
 uses
-  SysUtils, TSBindings, PatCompiler, PatMatcher;
+  SysUtils, RegExpr, TSBindings, PatCompiler, PatMatcher;
 
 type
   TFormulaKind = (
@@ -22,7 +22,10 @@ type
     fkEither,      // `pattern-either`。子の和集合。正の項
     fkNot,         // `pattern-not`。`patterns` の子にだけ現れる
     fkInside,      // `pattern-inside`。`patterns` の子にだけ現れる
-    fkNotInside    // `pattern-not-inside`。`patterns` の子にだけ現れる
+    fkNotInside,   // `pattern-not-inside`。`patterns` の子にだけ現れる
+    fkRegex,       // `pattern-regex`。正の項。ファイルのテキスト上の一致の範囲で、束縛は無い
+    fkNotRegex,    // `pattern-not-regex`。`patterns` の子にだけ現れる
+    fkMetaVarRegex // `metavariable-regex`。`patterns` の子にだけ現れる
   );
 
   TFormula = class
@@ -30,6 +33,10 @@ type
     FKind: TFormulaKind;
     FPattern: TPatCompileResult;
     FChildren: array of TFormula;
+    FRegexText: string;
+    FRegex: TRegExpr;
+    FRegexCI: TRegExpr;
+    FMetaVar: string;
     function GetChildCount: Integer;
     function GetChild(Index: Integer): TFormula;
   public
@@ -37,12 +44,19 @@ type
     constructor CreateLeaf(AKind: TFormulaKind; const APattern: TPatCompileResult);
     // fkPatterns / fkEither 用。子は AddChild で足す。
     constructor CreateNode(AKind: TFormulaKind);
-    // 子と Pattern.Root を解放する。
+    // fkRegex / fkNotRegex / fkMetaVarRegex 用。ARegex と ARegexCI の所有者はこのオブジェクト。
+    // ARegexCI（大文字小文字を無視する版）と AMetaVar（`$` を除いた名前）は
+    // fkMetaVarRegex のときだけ使い、それ以外は nil と ''。
+    constructor CreateRegex(AKind: TFormulaKind; const ARegexText: string;
+      ARegex, ARegexCI: TRegExpr; const AMetaVar: string);
+    // 子と Pattern.Root、正規表現を解放する。
     destructor Destroy; override;
     // 所有権を受け取る。
     procedure AddChild(Child: TFormula);
     property Kind: TFormulaKind read FKind;
     property Pattern: TPatCompileResult read FPattern;
+    property RegexText: string read FRegexText;
+    property MetaVar: string read FMetaVar;
     property ChildCount: Integer read GetChildCount;
     property Children[Index: Integer]: TFormula read GetChild;
   end;
@@ -50,7 +64,7 @@ type
 // JSON のキー名（'pattern'、'patterns'、'pattern-either' など）。ダンプとエラー表示用。
 function FormulaKeyName(Kind: TFormulaKind): string;
 
-// fkPattern / fkPatterns / fkEither なら True（`patterns` に最低 1 つ必要な正の項）。
+// fkPattern / fkPatterns / fkEither / fkRegex なら True（`patterns` に最低 1 つ必要な正の項）。
 function IsPositiveKind(Kind: TFormulaKind): Boolean;
 
 // A の範囲が B の範囲の中にある（両端を含む。同じ範囲も含む）なら True。
@@ -85,6 +99,9 @@ procedure CollectBoundNames(F: TFormula; var MetaVars, MetaVarEllipses: TStringA
 
 implementation
 
+uses
+  DeclRegex;
+
 constructor TFormula.CreateLeaf(AKind: TFormulaKind; const APattern: TPatCompileResult);
 begin
   inherited Create;
@@ -106,6 +123,16 @@ begin
   FChildren := nil;
 end;
 
+constructor TFormula.CreateRegex(AKind: TFormulaKind; const ARegexText: string;
+  ARegex, ARegexCI: TRegExpr; const AMetaVar: string);
+begin
+  CreateNode(AKind);
+  FRegexText := ARegexText;
+  FRegex := ARegex;
+  FRegexCI := ARegexCI;
+  FMetaVar := AMetaVar;
+end;
+
 destructor TFormula.Destroy;
 var
   I: Integer;
@@ -114,6 +141,8 @@ begin
     FChildren[I].Free;
   if FPattern.Root <> nil then
     FPattern.Root.Free;
+  FRegex.Free;
+  FRegexCI.Free;
   inherited;
 end;
 
@@ -142,12 +171,15 @@ begin
     fkNot:       Result := 'pattern-not';
     fkInside:    Result := 'pattern-inside';
     fkNotInside: Result := 'pattern-not-inside';
+    fkRegex:     Result := 'pattern-regex';
+    fkNotRegex:  Result := 'pattern-not-regex';
+    fkMetaVarRegex: Result := 'metavariable-regex';
   end;
 end;
 
 function IsPositiveKind(Kind: TFormulaKind): Boolean;
 begin
-  Result := (Kind = fkPattern) or (Kind = fkPatterns) or (Kind = fkEither);
+  Result := (Kind = fkPattern) or (Kind = fkPatterns) or (Kind = fkEither) or (Kind = fkRegex);
 end;
 
 function RangeInside(const A, B: TPatMatch): Boolean;
@@ -404,8 +436,97 @@ begin
   end;
 end;
 
+// pattern-not-regex は範囲がどちら向きに含まれても除く（opengrep の正規表現の否定と
+// 同じく、テキストの一致は構文の境界と揃わないため、同じ範囲を求めると何も除けない）。
+function RemoveRegexOverlap(const P, N: TPatMatchArray): TPatMatchArray;
+var
+  I, J: Integer;
+  Keep: Boolean;
+begin
+  Result := nil;
+  for I := 0 to High(P) do
+  begin
+    Keep := True;
+    for J := 0 to High(N) do
+      if RangeInside(P[I], N[J]) or RangeInside(N[J], P[I]) then
+      begin
+        Keep := False;
+        Break;
+      end;
+    if Keep then
+    begin
+      SetLength(Result, Length(Result) + 1);
+      Result[High(Result)] := P[I];
+    end;
+  end;
+end;
+
+// 未決 #5 の決定: 束縛が識別子 1 個なら大文字小文字を無視する版で、それ以外は区別する
+// 版で照合する。束縛されていない一致は落とす（照合できないものを残すと、条件を
+// 書いたのに効かないことになるため。CLAUDE.md ルール5）。
+function KeepMetaVarRegex(const P: TPatMatchArray; F: TFormula; const Source: string): TPatMatchArray;
+var
+  I, J: Integer;
+  B: TMetaVarBinding;
+  Found: Boolean;
+  Re: TRegExpr;
+begin
+  Result := nil;
+  for I := 0 to High(P) do
+  begin
+    Found := False;
+    for J := 0 to High(P[I].Bindings) do
+      if P[I].Bindings[J].Name = F.MetaVar then
+      begin
+        B := P[I].Bindings[J];
+        Found := True;
+        Break;
+      end;
+    if not Found then
+      Continue;
+    if (not B.IsRange) and (string(ts_node_type(B.Node)) = 'identifier') then
+      Re := F.FRegexCI
+    else
+      Re := F.FRegex;
+    if RegexMatchesAtStart(Re, BindingText(B, Source)) then
+    begin
+      SetLength(Result, Length(Result) + 1);
+      Result[High(Result)] := P[I];
+    end;
+  end;
+end;
+
 function EvaluateFormula(F: TFormula; const Root: TSNode; const Source: string;
   GoDeeperStmt: Boolean): TPatMatchArray;
+var
+  // 正規表現の一致の位置を行・列に直すための表。正規表現を使うルールでだけ作る。
+  LineStarts: TLineStarts;
+
+  function RegexMatches(Node: TFormula): TPatMatchArray;
+  var
+    R: TRegexRangeArray;
+    K: Integer;
+    Row, Col: LongWord;
+  begin
+    Result := nil;
+    if LineStarts = nil then
+      LineStarts := ComputeLineStarts(Source);
+    R := FindRegexRanges(Node.FRegex, Source);
+    SetLength(Result, Length(R));
+    for K := 0 to High(R) do
+    begin
+      Result[K].StartByte := R[K].StartByte;
+      Result[K].EndByte := R[K].EndByte;
+      OffsetToRowCol(LineStarts, R[K].StartByte, Row, Col);
+      Result[K].StartPoint.row := Row;
+      Result[K].StartPoint.column := Col;
+      OffsetToRowCol(LineStarts, R[K].EndByte, Row, Col);
+      Result[K].EndPoint.row := Row;
+      Result[K].EndPoint.column := Col;
+      Result[K].Bindings := nil;
+      Result[K].Deeper := False;
+    end;
+  end;
 
   // Cur / S は再帰ごとに持つこと。patterns の中の pattern-either の中に patterns が
   // あると、内側の評価が外側の途中経過を上書きしてしまうため。
@@ -419,6 +540,8 @@ function EvaluateFormula(F: TFormula; const Root: TSNode; const Source: string;
     case Node.Kind of
       fkPattern:
         Result := FindMatches(Node.Pattern.Root, Root, Source, GoDeeperStmt);
+      fkRegex:
+        Result := RegexMatches(Node);
       fkEither:
         begin
           for I := 0 to High(Node.FChildren) do
@@ -459,6 +582,10 @@ function EvaluateFormula(F: TFormula; const Root: TSNode; const Source: string;
               Cur := KeepInside(Cur, S, Source);
             end;
           end;
+          // inside の後に置くのは、inside で足された束縛にも条件を掛けられるようにするため。
+          for I := 0 to High(Node.FChildren) do
+            if Node.FChildren[I].Kind = fkMetaVarRegex then
+              Cur := KeepMetaVarRegex(Cur, Node.FChildren[I], Source);
           for I := 0 to High(Node.FChildren) do
           begin
             if Node.FChildren[I].Kind = fkNotInside then
@@ -475,12 +602,16 @@ function EvaluateFormula(F: TFormula; const Root: TSNode; const Source: string;
               Cur := RemoveEqual(Cur, S, Source);
             end;
           end;
+          for I := 0 to High(Node.FChildren) do
+            if Node.FChildren[I].Kind = fkNotRegex then
+              Cur := RemoveRegexOverlap(Cur, RegexMatches(Node.FChildren[I]));
           Result := Cur;
         end;
     end;
   end;
 
 begin
+  LineStarts := nil;
   Result := Eval(F);
   SortMatches(Result);
   Result := DedupMatches(Result);
@@ -492,6 +623,17 @@ var
   PatDump, Line: string;
   NLIdx: Integer;
 begin
+  if F.Kind in [fkRegex, fkNotRegex] then
+  begin
+    Result := StringOfChar(' ', Indent) + FormulaKeyName(F.Kind) + ': "' + F.RegexText + '"' + #10;
+    Exit;
+  end;
+  if F.Kind = fkMetaVarRegex then
+  begin
+    Result := StringOfChar(' ', Indent) + FormulaKeyName(F.Kind) + ': $' + F.MetaVar +
+      ' "' + F.RegexText + '"' + #10;
+    Exit;
+  end;
   Result := StringOfChar(' ', Indent) + FormulaKeyName(F.Kind) + ':' + #10;
   if (F.Kind = fkPattern) or (F.Kind = fkNot) or
      (F.Kind = fkInside) or (F.Kind = fkNotInside) then
@@ -570,7 +712,7 @@ begin
     fkPatterns, fkEither:
       for I := 0 to High(F.FChildren) do
         CollectBoundNames(F.FChildren[I], MetaVars, MetaVarEllipses);
-    fkNot, fkNotInside:
+    fkNot, fkNotInside, fkRegex, fkNotRegex, fkMetaVarRegex:
       ;
   end;
 end;

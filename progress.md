@@ -48,7 +48,7 @@ M1 着手前に決めたいもの（★）から順に並べる。決まった�
 | 3 ★ | `$ABC` 形式（16 進数字のみ）のメタ変数 | 読み込みエラー | **決定（2026-11-17）**: 既定は読み込みエラー。ルールごとの `options: { pascal_hex_dollar: true }` で 16 進リテラル扱い＋標準エラーに警告 | M1 |
 | 4 ★ | `go_deeper_stmt` の既定 | 無効（`options` で有効化） | **決定（2026-11-17）**: 既定で有効。入れ子のブロック内でだけ見つかった正の一致は重要度を一段下げて報告（注記付き）。`options: { go_deeper_stmt: false }` で無効化 | M1〜M2 |
 | 8 ★ | 正規表現エンジン | `RegExpr` で開始（M0 の結果次第） | **決定（2026-11-17）**: `RegExpr` で開始。非対応構文は読み込みエラー（POSIX クラス等は自前で事前検査）。M2 着手時に再評価 | M0 で判断 |
-| 5 | 識別子に対する `metavariable-regex` の大文字小文字 | 未定（推奨なし） | 未 | M2 |
+| 5 | 識別子に対する `metavariable-regex` の大文字小文字 | 未定（推奨なし） | **決定（2026-11-19）**: 束縛が識別子 1 個のときは既定で大文字小文字を無視する（opengrep との違い）。それ以外の束縛（文字列リテラル、式、`$...X` の範囲）は区別する | M2 |
 | 6 | `severity` の `INFO` / `LOW` | `svInfo` を追加 | **決定（2026-11-17）**: `svInfo` を追加（#4 の一段下げ先として M2 で必要） | M2 |
 | 7 | YAML | JSON 先行（M1）＋自作サブセット（M3） | 未 | M1（JSON は確定でよい） |
 | 9 | ルールの指定方法 | `--rules` のみで開始 | 未 | M1 |
@@ -90,7 +90,7 @@ M1 着手前に決めたいもの（★）から順に並べる。決まった�
 - [x] `patterns` / `pattern-either` / `pattern-not` / `pattern-inside` / `pattern-not-inside` と範囲演算・束縛の両立判定 → `src/Decl/Formula.pas`（interface は Opus、implementation は Qwen。レビューで Opus がバグ 2 点を修正）。読み込みは `RuleFile.ParseFormula`（Opus）。決めたことは設計書 4.4 に追記。ゴールデン: 読み込み 12 件、lint 全体 1 件（`tests/decl/cli/combine`、ルール 8 本）。Linux / Windows CI 緑（run 44459076403）
 - [x] 文の並びのパターン（`block` / `statements` / `blockTr`、条件コンパイル指令をまたがない）→ `PatMatcher.FindSequenceMatches`（Qwen。1 回目は思考だけで本文が空。プロンプトを短くした 2 回目を採用し、レビューで Opus が束縛の退避の位置を修正）。入れ子への探索と重要度の一段下げ（`DeclRule`、`Formula` の印の持ち回し）は Opus。`;` の問題は PatLexer で補う方に決めた。決めたことは設計書 4.3 に追記。ゴールデン: 照合 4 件、ダンプ 1 件、読み込み 3 件、lint 全体 2 件。Linux / Windows CI 緑（run 44469718256）。`go_deeper_stmt` は既定で有効、入れ子内だけの一致は重要度を一段下げる（#4）。M1 での実測: 文の位置の `...` は後ろに `;` が無いとパースできない（`...;` なら可）。opengrep の他言語のルールは `;` なしで書くことが多いので、PatLexer で補うかルール作者に `...;` を求めるかをここで決める
 - [x] `svInfo` を `svWarning` の前に追加し、`--fail-on=info` を受け付ける（#6）→ Opus が直接実装。text / json は `info`、github は `::notice`。宣言的ルールの `INFO` / `LOW` を受け付ける。ゴールデン: 読み込み 1 件（`ok_severity_info`、旧 `err_severity_info`）、lint 全体 5 件（`tests/decl/cli/info_*`）
-- [ ] `pattern-regex` / `pattern-not-regex` / `metavariable-regex`
+- [~] `pattern-regex` / `pattern-not-regex` / `metavariable-regex` → `src/Decl/DeclRegex.pas`（interface と単体テスト 28 件は Opus、implementation は Qwen。レビューで Opus が無限ループを修正）。合成・読み込みへの組み込みは Opus。#5 は「識別子なら既定で大文字小文字を無視」に決定。ゴールデン: 読み込み 11 件、lint 全体 1 件（`tests/decl/cli/regex`）。push・CI 待ち
 - [ ] `focus-metavariable`、`TDiagnostic` への終了位置追加
 - [ ] opengrep との差分テスト（regex 葉のみ、Linux CI の任意ジョブ、opengrep バージョン固定）
 - [ ] fpc-source 全体でクラッシュなし・実行時間・件数の実測
@@ -128,6 +128,8 @@ M1 着手前に決めたいもの（★）から順に並べる。決まった�
 ## 6. 作業ログ
 
 新しいものを上に追記する。1 エントリ: 日付 / 担当 / やったこと / 結果（テスト・CI）/ 次の一手。
+
+- 2026-11-19 / Opus（ローカル）+ Qwen: 正規表現の演算子。オーナー判断で #5 を「束縛が識別子 1 個なら既定で大文字小文字を無視、それ以外は区別」に決めた。#8 の再評価として、RegExpr の必要な機能（ModifierS / M / I、Exec / ExecNext、長さ 0 の一致の後も ExecNext が進むこと、ERegExpr）を実機で確かめ、RegExpr のまま進めた。tree-sitter に依存しない部分を新ユニット `DeclRegex` にし、単体テストを Opus が仕様から先に書いた。Qwen の実装で直したのは、`FindRegexRanges` のループ条件が毎回先頭から探し直す `Exec` で、一致があると終わらない点（単体テストがそのままでは止まらない）と、未使用の変数、コードをなぞるコメント。決めたこと: `metavariable-regex` は束縛のテキストの先頭に固定（ルール5）、束縛されていない一致は落とす、名前が同じ `patterns` で束縛されなければ読み込みエラー。`pattern-not-regex` は範囲がどちら向きに含まれても除く。fpc-source 全体にテスト用の 4 ルールを当て、クラッシュなし、約 1 分 26 秒。結果: make / make test（単体 29 + 31 + 28 件）/ make selflint 緑。次の一手: push して CI → `focus-metavariable` と終了位置
 
 - 2026-11-19 / Opus（ローカル）+ Qwen: 文の並びのパターン。3 つのコミットに分けた。(1) `svInfo` と `--fail-on=info`（入れ子の一致を一段下げる先として先に必要。github 形式は `::notice`）。(2) PatLexer: 行に単独で括弧の外の `...` / `$...X` に `;` を補う（ルール作者に `...;` を求めない方に決めた。opengrep の他言語のルールの書き方に合わせるため）。単体テスト 7 件追加。(3) 照合: 対象は `block` / `statements` / `blockTr` の子で、`pp` 指令・`raise;` 以外の ERROR・MISSING で区間に分け、一致は 1 区間に収める（条件コンパイル指令に限らず止める。ルール5）。入れ子への探索は、直接の照合が失敗したときに最後の文の項目だけに使い、印（`TPatMatch.Deeper`）を合成で持ち回して、アダプタが範囲ごとに全部印付きなら一段下げて注記を付ける。Qwen は 1 回目、約 2 万トークンを思考に使い本文が空のまま stop で終わった。`tools/qwen-gen.bb` を本文が空なら失敗にするよう直し、既存ファイル全文の代わりに必要な宣言だけを渡す短いプロンプトで 2 回目を採用。直したのは、入れ子への探索で束縛を退避する位置が遅く、失敗した候補の束縛が次の候補に残る点と、未使用の変数。fpc-source 全体で「生成して同じブロックで解放」「解放されない」の 2 ルール（M2 のテスト用、同梱しない）を当て、クラッシュなし、約 1 分 14 秒、735 件（うち入れ子でだけ見つかったもの 483 件）と 1,545 件。抜き取りで 3 件確認し、いずれも照合としては正しい（1 件は `Destroy` で解放しているもので、テスト用ルールの除外に無いだけ）。結果: make / make test（単体 29 + 31 件）/ make selflint 緑。push 後の CI（run 44469718256）も Linux / Windows とも緑。次の一手: `pattern-regex` / `metavariable-regex`（#5 の判断が要る）
 
