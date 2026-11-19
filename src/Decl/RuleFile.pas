@@ -84,13 +84,13 @@ uses
   fpjson, jsonparser, RegExpr, LintDriver, MsgInterp, DeclRegex;
 
 const
-  CAcceptedKeys: array[0..14] of string =
+  CAcceptedKeys: array[0..15] of string =
     ('id', 'message', 'severity', 'languages', 'pattern', 'metadata', 'options',
      'patterns', 'pattern-either', 'pattern-not', 'pattern-inside', 'pattern-not-inside',
-     'pattern-regex', 'pattern-not-regex', 'metavariable-regex');
-  CNotImplKeys: array[0..5] of string =
+     'pattern-regex', 'pattern-not-regex', 'metavariable-regex', 'focus-metavariable');
+  CNotImplKeys: array[0..4] of string =
     ('metavariable-pattern', 'metavariable-comparison',
-     'focus-metavariable', 'paths', 'fix', 'fix-regex');
+     'paths', 'fix', 'fix-regex');
   COutOfScopeKeys: array[0..15] of string =
     ('mode', 'pattern-sources', 'pattern-sinks', 'pattern-sanitizers',
      'pattern-propagators', 'taint', 'metavariable-type', 'join', 'extract',
@@ -257,6 +257,8 @@ begin
     Kind := fkNotRegex
   else if Key = 'metavariable-regex' then
     Kind := fkMetaVarRegex
+  else if Key = 'focus-metavariable' then
+    Kind := fkFocus
   else
     Result := False;
 end;
@@ -355,6 +357,7 @@ var
   BoundVars, BoundEllipses: TStringArray;
   Re: TRegExpr;
   ReErr: string;
+  FocusCount: Integer;
 begin
   F := nil;
   ErrMsg := '';
@@ -399,23 +402,33 @@ begin
         Exit(False);
       end;
     end;
-    // metavariable-regex の名前は、同じ patterns の正の項か inside で束縛されなければ
-    // ならない。束縛されない名前の条件は常に一致を落とすので、たぶん書き間違い。
+    // metavariable-regex と focus-metavariable の名前は、同じ patterns の正の項か inside で
+    // 束縛されなければならない。束縛されない名前は常に一致を落とすので、たぶん書き間違い。
+    // focus-metavariable が 2 個以上あると opengrep では範囲の積になるが、差分テストで
+    // 確かめるまでは受け付けない（CLAUDE.md ルール5）。
     if Kind = fkPatterns then
     begin
       BoundVars := nil;
       BoundEllipses := nil;
       CollectBoundNames(F, BoundVars, BoundEllipses);
+      FocusCount := 0;
       for I := 0 to F.ChildCount - 1 do
-        if (F.Children[I].Kind = fkMetaVarRegex) and
+      begin
+        if F.Children[I].Kind = fkFocus then
+          Inc(FocusCount);
+        if (F.Children[I].Kind in [fkMetaVarRegex, fkFocus]) and
            not InArray(F.Children[I].MetaVar, BoundVars) and
            not InArray(F.Children[I].MetaVar, BoundEllipses) then
+          ErrMsg := Path + '[' + IntToStr(I) + ']."' + FormulaKeyName(F.Children[I].Kind) + '": $' +
+            F.Children[I].MetaVar + ' is not bound by the other terms of "patterns"'
+        else if (F.Children[I].Kind = fkFocus) and (FocusCount > 1) then
+          ErrMsg := Path + '[' + IntToStr(I) + ']: only one "focus-metavariable" per "patterns" is supported';
+        if ErrMsg <> '' then
         begin
-          ErrMsg := Path + '[' + IntToStr(I) + ']."metavariable-regex": $' + F.Children[I].MetaVar +
-            ' is not bound by the other terms of "patterns"';
           FreeAndNil(F);
           Exit(False);
         end;
+      end;
     end;
     // 否定と inside だけの patterns は、opengrep でも正の項が必須（設計書 4.4）。
     if (Kind = fkPatterns) and not HasPositive then
@@ -429,6 +442,18 @@ begin
 
   if Kind = fkMetaVarRegex then
     Exit(ParseMetaVarRegex(Value, Path, F, ErrMsg));
+  if Kind = fkFocus then
+  begin
+    // opengrep はメタ変数のリストも受け付けるが（範囲の積）、1 個だけに限る。
+    if Value.JSONType = jtArray then
+      ErrMsg := Path + ': a list of metavariables is not supported yet'
+    else if (Value.JSONType <> jtString) or not IsMetaVarName(Value.AsString) then
+      ErrMsg := Path + ': expected a metavariable such as "$X"';
+    if ErrMsg <> '' then
+      Exit(False);
+    F := TFormula.CreateFocus(Copy(Value.AsString, 2, Length(Value.AsString) - 1));
+    Exit(True);
+  end;
 
   if (Value.JSONType <> jtString) or (Value.AsString = '') then
   begin
@@ -688,7 +713,8 @@ begin
   begin
     Key := Obj.Names[I];
     if (Key = 'pattern-not') or (Key = 'pattern-inside') or (Key = 'pattern-not-inside') or
-       (Key = 'pattern-not-regex') or (Key = 'metavariable-regex') then
+       (Key = 'pattern-not-regex') or (Key = 'metavariable-regex') or
+       (Key = 'focus-metavariable') then
     begin
       ErrMsg := Prefix + ': "' + Key + '" is only allowed inside "patterns"';
       Exit(False);

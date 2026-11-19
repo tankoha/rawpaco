@@ -136,7 +136,7 @@ begin
       Sev := LowerSeverity(Sev);
       Msg := Msg + CDeeperNote;
     end;
-    Ctx.ReportAt(FRule.Id, Sev, Msg, Matches[I].StartPoint);
+    Ctx.ReportRange(FRule.Id, Sev, Msg, Matches[I].StartPoint, Matches[I].EndPoint);
     I := GroupEnd + 1;
   end;
 end;

@@ -1,0 +1,1 @@
+--only=DECL-FOCUS,DECL-FOCUS-RANGE --rules=tests/decl/cli/focus/rules.json tests/decl/cli/focus/target.pas

@@ -1,0 +1,1 @@
+error: tests/decl/load/err_focus_two.json: rules[0] (id "T-1"): "patterns"[2]: only one "focus-metavariable" per "patterns" is supported

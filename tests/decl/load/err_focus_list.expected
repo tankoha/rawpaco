@@ -1,0 +1,1 @@
+error: tests/decl/load/err_focus_list.json: rules[0] (id "T-1"): "patterns"[1]."focus-metavariable": a list of metavariables is not supported yet

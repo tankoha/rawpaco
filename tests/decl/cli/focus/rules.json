@@ -1,0 +1,6 @@
+{"rules": [
+  {"id": "DECL-FOCUS", "message": "second argument $SECOND", "severity": "WARNING", "languages": ["pascal"],
+   "patterns": [{"pattern": "Log($FIRST, $SECOND)"}, {"pattern-not": "Log('skip', $SECOND)"}, {"focus-metavariable": "$SECOND"}]},
+  {"id": "DECL-FOCUS-RANGE", "message": "arguments $...ARGS", "severity": "WARNING", "languages": ["pascal"],
+   "patterns": [{"pattern": "Foo($...ARGS)"}, {"focus-metavariable": "$ARGS"}]}
+]}

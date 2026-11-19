@@ -28,6 +28,11 @@ type
     FileName: string;
     Line, Column: LongWord; // 1-origin(人間向け表示に合わせる。
                              // ts_node_start_pointは0-originなので+1する)
+    // 終了位置（Line / Column と同じ 1 始まり、終わりの直後を指す）。text / github /
+    // json の出力にはまだ出さない（既存の出力をバイト単位で変えないため）。SARIF の
+    // region と、宣言的ルールの focus-metavariable の範囲のために持つ
+    // （OPENGREP_RULE_ENGINE_DESIGN 4.7）。
+    EndLine, EndColumn: LongWord;
     Severity: TSeverity;
   end;
 
@@ -43,10 +48,13 @@ type
     destructor Destroy; override;
     procedure Report(const ARuleId: string; ASeverity: TSeverity;
       const AMessage: string; const Node: TSNode);
-    // 位置で報告する。宣言的ルール（src/Decl）の一致はノードではなくバイト範囲と
-    // 開始位置で返るため（設計書 OPENGREP_RULE_ENGINE_DESIGN 4.7）。終了位置は M2。
+    // 位置で報告する。終了位置は開始位置と同じにする。
     procedure ReportAt(const ARuleId: string; ASeverity: TSeverity;
       const AMessage: string; const Point: TSPoint);
+    // 範囲で報告する。宣言的ルール（src/Decl）の一致はノードではなくバイト範囲と
+    // その開始・終了位置で返るため（設計書 OPENGREP_RULE_ENGINE_DESIGN 4.7）。
+    procedure ReportRange(const ARuleId: string; ASeverity: TSeverity;
+      const AMessage: string; const StartPoint, EndPoint: TSPoint);
     function GetNodeText(const Node: TSNode): AnsiString;
     property FileName: string read FFileName;
     // 宣言的ルールの照合器（PatMatcher.FindMatches）が葉のテキスト比較に使う。
@@ -113,19 +121,27 @@ end;
 procedure TLintContext.Report(const ARuleId: string; ASeverity: TSeverity;
   const AMessage: string; const Node: TSNode);
 begin
-  ReportAt(ARuleId, ASeverity, AMessage, ts_node_start_point(Node));
+  ReportRange(ARuleId, ASeverity, AMessage, ts_node_start_point(Node), ts_node_end_point(Node));
 end;
 
 procedure TLintContext.ReportAt(const ARuleId: string; ASeverity: TSeverity;
   const AMessage: string; const Point: TSPoint);
+begin
+  ReportRange(ARuleId, ASeverity, AMessage, Point, Point);
+end;
+
+procedure TLintContext.ReportRange(const ARuleId: string; ASeverity: TSeverity;
+  const AMessage: string; const StartPoint, EndPoint: TSPoint);
 var
   Diag: TDiagnostic;
 begin
   Diag.RuleId := ARuleId;
   Diag.Message := AMessage;
   Diag.FileName := FFileName;
-  Diag.Line := Point.row + 1;
-  Diag.Column := Point.column + 1;
+  Diag.Line := StartPoint.row + 1;
+  Diag.Column := StartPoint.column + 1;
+  Diag.EndLine := EndPoint.row + 1;
+  Diag.EndColumn := EndPoint.column + 1;
   Diag.Severity := ASeverity;
   FDiagnostics.Add(Diag);
 end;

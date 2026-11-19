@@ -1,0 +1,4 @@
+tests/decl/cli/focus/target.pas:3:12: warning: second argument Value [DECL-FOCUS]
+tests/decl/cli/focus/target.pas:6:7: warning: second argument Multi + Line [DECL-FOCUS]
+tests/decl/cli/focus/target.pas:8:7: warning: arguments 1, 2 [DECL-FOCUS-RANGE]
+rc=0

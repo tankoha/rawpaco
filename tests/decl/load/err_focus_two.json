@@ -1,0 +1,1 @@
+{"rules": [{"id": "T-1", "message": "m", "severity": "WARNING", "languages": ["pascal"], "patterns": [{"pattern": "Log($MSG, $LVL)"}, {"focus-metavariable": "$MSG"}, {"focus-metavariable": "$LVL"}]}]}

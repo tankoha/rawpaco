@@ -25,7 +25,8 @@ type
     fkNotInside,   // `pattern-not-inside`。`patterns` の子にだけ現れる
     fkRegex,       // `pattern-regex`。正の項。ファイルのテキスト上の一致の範囲で、束縛は無い
     fkNotRegex,    // `pattern-not-regex`。`patterns` の子にだけ現れる
-    fkMetaVarRegex // `metavariable-regex`。`patterns` の子にだけ現れる
+    fkMetaVarRegex, // `metavariable-regex`。`patterns` の子にだけ現れる
+    fkFocus        // `focus-metavariable`。`patterns` の子にだけ、1 個まで現れる
   );
 
   TFormula = class
@@ -49,6 +50,8 @@ type
     // fkMetaVarRegex のときだけ使い、それ以外は nil と ''。
     constructor CreateRegex(AKind: TFormulaKind; const ARegexText: string;
       ARegex, ARegexCI: TRegExpr; const AMetaVar: string);
+    // fkFocus 用。AMetaVar は `$` を除いた名前。
+    constructor CreateFocus(const AMetaVar: string);
     // 子と Pattern.Root、正規表現を解放する。
     destructor Destroy; override;
     // 所有権を受け取る。
@@ -133,6 +136,12 @@ begin
   FMetaVar := AMetaVar;
 end;
 
+constructor TFormula.CreateFocus(const AMetaVar: string);
+begin
+  CreateNode(fkFocus);
+  FMetaVar := AMetaVar;
+end;
+
 destructor TFormula.Destroy;
 var
   I: Integer;
@@ -174,6 +183,7 @@ begin
     fkRegex:     Result := 'pattern-regex';
     fkNotRegex:  Result := 'pattern-not-regex';
     fkMetaVarRegex: Result := 'metavariable-regex';
+    fkFocus:     Result := 'focus-metavariable';
   end;
 end;
 
@@ -528,6 +538,44 @@ var
     end;
   end;
 
+  // focus-metavariable: 範囲を束縛の範囲に置き換える。他のすべての項を適用した後に
+  // 置くのは、否定や条件は元の一致の範囲で判定するため（opengrep の説明どおり）。
+  // 束縛が無い一致と、長さ 0 の範囲の束縛（空の `$...X`）は報告する場所が無いので落とす。
+  function ApplyFocus(const P: TPatMatchArray; const Name: string): TPatMatchArray;
+  var
+    K, J: Integer;
+    M: TPatMatch;
+    Row, Col: LongWord;
+    Found: Boolean;
+  begin
+    Result := nil;
+    if LineStarts = nil then
+      LineStarts := ComputeLineStarts(Source);
+    for K := 0 to High(P) do
+    begin
+      Found := False;
+      M := P[K];
+      for J := 0 to High(P[K].Bindings) do
+        if P[K].Bindings[J].Name = Name then
+        begin
+          M.StartByte := P[K].Bindings[J].StartByte;
+          M.EndByte := P[K].Bindings[J].EndByte;
+          Found := True;
+          Break;
+        end;
+      if (not Found) or (M.EndByte <= M.StartByte) then
+        Continue;
+      OffsetToRowCol(LineStarts, M.StartByte, Row, Col);
+      M.StartPoint.row := Row;
+      M.StartPoint.column := Col;
+      OffsetToRowCol(LineStarts, M.EndByte, Row, Col);
+      M.EndPoint.row := Row;
+      M.EndPoint.column := Col;
+      SetLength(Result, Length(Result) + 1);
+      Result[High(Result)] := M;
+    end;
+  end;
+
   // Cur / S は再帰ごとに持つこと。patterns の中の pattern-either の中に patterns が
   // あると、内側の評価が外側の途中経過を上書きしてしまうため。
   function Eval(Node: TFormula): TPatMatchArray;
@@ -605,6 +653,9 @@ var
           for I := 0 to High(Node.FChildren) do
             if Node.FChildren[I].Kind = fkNotRegex then
               Cur := RemoveRegexOverlap(Cur, RegexMatches(Node.FChildren[I]));
+          for I := 0 to High(Node.FChildren) do
+            if Node.FChildren[I].Kind = fkFocus then
+              Cur := ApplyFocus(Cur, Node.FChildren[I].MetaVar);
           Result := Cur;
         end;
     end;
@@ -626,6 +677,11 @@ begin
   if F.Kind in [fkRegex, fkNotRegex] then
   begin
     Result := StringOfChar(' ', Indent) + FormulaKeyName(F.Kind) + ': "' + F.RegexText + '"' + #10;
+    Exit;
+  end;
+  if F.Kind = fkFocus then
+  begin
+    Result := StringOfChar(' ', Indent) + FormulaKeyName(F.Kind) + ': $' + F.MetaVar + #10;
     Exit;
   end;
   if F.Kind = fkMetaVarRegex then
@@ -712,7 +768,7 @@ begin
     fkPatterns, fkEither:
       for I := 0 to High(F.FChildren) do
         CollectBoundNames(F.FChildren[I], MetaVars, MetaVarEllipses);
-    fkNot, fkNotInside, fkRegex, fkNotRegex, fkMetaVarRegex:
+    fkNot, fkNotInside, fkRegex, fkNotRegex, fkMetaVarRegex, fkFocus:
       ;
   end;
 end;
