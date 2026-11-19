@@ -185,7 +185,7 @@ begin
         Source := ReadFileAsString(F);
         Tree := ts_parser_parse_string(Parser, nil, PAnsiChar(Source), Length(Source));
         try
-          Matches := FindMatches(R.Root, ts_tree_root_node(Tree), Source);
+          Matches := FindMatches(R.Root, ts_tree_root_node(Tree), Source, True);
           for j := 0 to High(Matches) do
           begin
             MatchedText := Copy(Source, Matches[j].StartByte + 1, Matches[j].EndByte - Matches[j].StartByte);
@@ -193,6 +193,8 @@ begin
               [F, Matches[j].StartPoint.row + 1, Matches[j].StartPoint.column + 1,
                Matches[j].EndPoint.row + 1, Matches[j].EndPoint.column + 1,
                FirstLine(MatchedText)]));
+            if Matches[j].Deeper then
+              WriteLn('  (deeper)');
             for k := 0 to High(Matches[j].Bindings) do
             begin
               if Matches[j].Bindings[k].IsRange then

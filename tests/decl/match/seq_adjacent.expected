@@ -1,0 +1,2 @@
+tests/decl/match/seq_adjacent.pas:3:3-4:7: Foo;
+tests/decl/match/seq_adjacent.pas:9:5-10:9: Foo;

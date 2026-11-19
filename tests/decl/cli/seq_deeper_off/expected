@@ -1,0 +1,2 @@
+tests/decl/cli/seq_deeper/target.pas:3:3: error: A is created and freed [DECL-SEQ-OFF]
+rc=1

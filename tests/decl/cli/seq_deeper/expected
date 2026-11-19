@@ -1,0 +1,6 @@
+tests/decl/cli/seq_deeper/target.pas:3:3: error: A is created and freed [DECL-SEQ-ERR]
+tests/decl/cli/seq_deeper/target.pas:9:3: warning: B is created and freed (matched inside a nested block) [DECL-SEQ-ERR]
+tests/decl/cli/seq_deeper/target.pas:3:3: warning: A is created and freed [DECL-SEQ-WARN]
+tests/decl/cli/seq_deeper/target.pas:9:3: info: B is created and freed (matched inside a nested block) [DECL-SEQ-WARN]
+tests/decl/cli/seq_deeper/target.pas:19:3: warning: C is created but not freed in the same block [DECL-SEQ-UNFREED]
+rc=1

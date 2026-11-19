@@ -1,0 +1,13 @@
+rule T-1
+  file: tests/decl/load/ok_patterns_sequence.json
+  severity: warning
+  message: m
+  options: pascal_hex_dollar=false go_deeper_stmt=true
+  patterns:
+    pattern:
+      wrapper: statement
+      sequence
+        statement
+          identifier "Foo"
+        statement
+          identifier "Bar"

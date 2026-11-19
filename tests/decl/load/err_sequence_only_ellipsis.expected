@@ -1,0 +1,1 @@
+error: tests/decl/load/err_sequence_only_ellipsis.json: rules[0] (id "T-1"): "pattern": a pattern that is only an ellipsis would match everything

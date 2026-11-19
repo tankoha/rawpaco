@@ -1,0 +1,15 @@
+wrapper: statement
+sequence
+  assignment
+    lhs: $X
+    operator: kAssign ":="
+    rhs: exprDot
+      lhs: $Y
+      operator: kDot "."
+      rhs: identifier "Create"
+  ...
+  statement
+    exprDot
+      lhs: $X
+      operator: kDot "."
+      rhs: identifier "Free"

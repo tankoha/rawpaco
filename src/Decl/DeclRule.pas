@@ -77,22 +77,48 @@ begin
   Result[0] := 'root';
 end;
 
+const
+  CDeeperNote = ' (matched inside a nested block)';
+
+// 未決 #4 の決定: 入れ子のブロックの中でだけ見つかった一致は一段下げて報告する。
+function LowerSeverity(Sev: TSeverity): TSeverity;
+begin
+  case Sev of
+    svError: Result := svWarning;
+    svWarning: Result := svInfo;
+  else
+    Result := svInfo;
+  end;
+end;
+
 procedure TDeclRuleAdapter.Check(const Node: TSNode; Ctx: TLintContext);
 var
   Matches: TPatMatchArray;
-  I, J: Integer;
+  I, J, GroupEnd: Integer;
   Keys, Values: TStringArray;
   B: TMetaVarBinding;
+  AllDeeper: Boolean;
+  Sev: TSeverity;
+  Msg: string;
 begin
-  Matches := EvaluateFormula(FRule.Formula, Node, Ctx.Source);
-  for I := 0 to High(Matches) do
+  Matches := EvaluateFormula(FRule.Formula, Node, Ctx.Source, FRule.GoDeeperStmt);
+  I := 0;
+  while I <= High(Matches) do
   begin
     // 同じ範囲でも束縛の違う一致が複数残りうる（pattern-inside が複数の外側と
     // 両立したときなど）が、利用者には同じ箇所の重複に見えるので 1 件だけ報告する。
-    // EvaluateFormula が範囲順に並べるので、直前と比べれば足りる。
-    if (I > 0) and (Matches[I].StartByte = Matches[I - 1].StartByte) and
-       (Matches[I].EndByte = Matches[I - 1].EndByte) then
-      Continue;
+    // EvaluateFormula が範囲順に並べるので、同じ範囲は隣り合う。どれか 1 つでも
+    // 入れ子に降りずに見つかっていれば、その箇所は本来の重要度で報告する。
+    GroupEnd := I;
+    AllDeeper := Matches[I].Deeper;
+    while (GroupEnd + 1 <= High(Matches)) and
+          (Matches[GroupEnd + 1].StartByte = Matches[I].StartByte) and
+          (Matches[GroupEnd + 1].EndByte = Matches[I].EndByte) do
+    begin
+      Inc(GroupEnd);
+      AllDeeper := AllDeeper and Matches[GroupEnd].Deeper;
+    end;
+
     Keys := nil;
     Values := nil;
     SetLength(Keys, Length(Matches[I].Bindings));
@@ -103,8 +129,15 @@ begin
       Keys[J] := BindingKey(B.Name, B.IsRange);
       Values[J] := BindingText(B, Ctx.Source);
     end;
-    Ctx.ReportAt(FRule.Id, FRule.Severity, InterpolateMessage(FRule.Message, Keys, Values),
-      Matches[I].StartPoint);
+    Msg := InterpolateMessage(FRule.Message, Keys, Values);
+    Sev := FRule.Severity;
+    if AllDeeper then
+    begin
+      Sev := LowerSeverity(Sev);
+      Msg := Msg + CDeeperNote;
+    end;
+    Ctx.ReportAt(FRule.Id, Sev, Msg, Matches[I].StartPoint);
+    I := GroupEnd + 1;
   end;
 end;
 

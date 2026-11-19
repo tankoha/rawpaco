@@ -1,0 +1,2 @@
+tests/decl/match/seq_trailing.pas:4:3-6:10: L := TFoo.Create;
+  $X = L

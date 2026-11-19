@@ -26,4 +26,8 @@
              "lines:" (count (str/split-lines text)))
     (when-not (= "stop" (:done_reason body))
       (binding [*out* *err*] (println "出力が途中で切れた"))
+      (System/exit 1))
+    ;; 思考だけでトークンを使い、本文が空のまま stop で終わることがある（2026-11-19 実測）。
+    (when (str/blank? text)
+      (binding [*out* *err*] (println "出力が空だった"))
       (System/exit 1))))

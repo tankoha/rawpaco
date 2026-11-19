@@ -223,6 +223,16 @@ begin
   Result := PAnsiChar(ts_node_type(N));
 end;
 
+function SequenceHasStatement(Seq: TPatNode): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 0 to Seq.ChildCount - 1 do
+    if not (Seq.Children[I].Kind in [pkEllipsis, pkMetaVarEllipsis]) then
+      Exit(True);
+end;
+
 function CompilePattern(const Src: string; const Opts: TPatLexOptions): TPatCompileResult;
 var
   L: TPatLexResult;
@@ -542,8 +552,10 @@ begin
     ts_parser_delete(P);
   end;
 
-  // ellipsis のみパターンは拒否（何でもマッチしてしまうため）
-  if (Root.Kind = pkEllipsis) or (Root.Kind = pkMetaVarEllipsis) then
+  // ellipsis のみパターンは拒否（何でもマッチしてしまうため）。文の並びで ellipsis
+  // だけのもの（`...` を 2 行書いたものなど）も同じ。
+  if (Root.Kind = pkEllipsis) or (Root.Kind = pkMetaVarEllipsis) or
+     ((Root.Kind = pkSequence) and not SequenceHasStatement(Root)) then
   begin
     Root.Free;
     Root := nil;

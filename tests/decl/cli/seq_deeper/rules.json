@@ -1,0 +1,12 @@
+{"rules": [
+  {"id": "DECL-SEQ-ERR", "message": "$X is created and freed", "severity": "ERROR", "languages": ["pascal"],
+   "pattern": "$X := TFoo.Create;\n...\n$X.Free;"},
+  {"id": "DECL-SEQ-WARN", "message": "$X is created and freed", "severity": "WARNING", "languages": ["pascal"],
+   "pattern": "$X := TFoo.Create;\n...\n$X.Free;"},
+  {"id": "DECL-SEQ-OFF", "message": "$X is created and freed", "severity": "ERROR", "languages": ["pascal"],
+   "options": {"go_deeper_stmt": false},
+   "pattern": "$X := TFoo.Create;\n...\n$X.Free;"},
+  {"id": "DECL-SEQ-UNFREED", "message": "$X is created but not freed in the same block", "severity": "WARNING", "languages": ["pascal"],
+   "patterns": [{"pattern": "$X := TFoo.Create;"},
+                {"pattern-not-inside": "$X := TFoo.Create;\n...\n$X.Free;"}]}
+]}

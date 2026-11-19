@@ -1,0 +1,4 @@
+tests/decl/match/seq_mvell.pas:3:3-6:8: Start;
+  $...BODY = A := 1;
+tests/decl/match/seq_mvell.pas:7:3-8:8: Start;
+  $...BODY = 

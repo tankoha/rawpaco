@@ -66,7 +66,12 @@ function MergeBindings(const A, B: TBindingArray): TBindingArray;
 // F を Root 以下で評価し、一致を開始バイト、終了バイトの順に並べて返す。範囲と束縛が
 // まったく同じ一致は 1 件にまとめる（範囲が同じで束縛が違うものは残す。後の
 // pattern-not の両立判定に効くため）。F は fkPattern / fkPatterns / fkEither のどれか。
-function EvaluateFormula(F: TFormula; const Root: TSNode; const Source: string): TPatMatchArray;
+// GoDeeperStmt は葉の照合（PatMatcher.FindMatches）にそのまま渡す。
+// 一致の Deeper は合成でも引き継ぐ: 積と inside では片方でも Deeper なら Deeper
+// （入れ子の中でだけ成り立つ一致なので、報告を一段下げる側に倒す）、まとめる
+// ときはどれか 1 つでも Deeper でなければ Deeper でない。
+function EvaluateFormula(F: TFormula; const Root: TSNode; const Source: string;
+  GoDeeperStmt: Boolean): TPatMatchArray;
 
 // ゴールデンテスト用のテキスト表現（--dump-rules）。Indent 個の空白で字下げして
 // '<キー名>:' の行を書き、葉はパターンのダンプ（PatCompiler.DumpPattern）を、
@@ -211,6 +216,7 @@ begin
       begin
         M := L[I];
         M.Bindings := MergeBindings(L[I].Bindings, R[J].Bindings);
+        M.Deeper := L[I].Deeper or R[J].Deeper;
         SetLength(Result, Length(Result) + 1);
         Result[Length(Result) - 1] := M;
       end;
@@ -225,6 +231,7 @@ begin
       begin
         M := R[I];
         M.Bindings := MergeBindings(R[I].Bindings, L[J].Bindings);
+        M.Deeper := R[I].Deeper or L[J].Deeper;
         SetLength(Result, Length(Result) + 1);
         Result[Length(Result) - 1] := M;
       end;
@@ -245,6 +252,7 @@ begin
       begin
         M := P[Ii];
         M.Bindings := MergeBindings(P[Ii].Bindings, I[Jj].Bindings);
+        M.Deeper := P[Ii].Deeper or I[Jj].Deeper;
         SetLength(Result, Length(Result) + 1);
         Result[Length(Result) - 1] := M;
       end;
@@ -376,6 +384,7 @@ begin
       begin
         if BindingsIdentical(A[J].Bindings, Kept[K].Bindings) then
         begin
+          Kept[K].Deeper := Kept[K].Deeper and A[J].Deeper;
           IsDup := True;
           Break;
         end;
@@ -395,7 +404,8 @@ begin
   end;
 end;
 
-function EvaluateFormula(F: TFormula; const Root: TSNode; const Source: string): TPatMatchArray;
+function EvaluateFormula(F: TFormula; const Root: TSNode; const Source: string;
+  GoDeeperStmt: Boolean): TPatMatchArray;
 
   // Cur / S は再帰ごとに持つこと。patterns の中の pattern-either の中に patterns が
   // あると、内側の評価が外側の途中経過を上書きしてしまうため。
@@ -408,7 +418,7 @@ function EvaluateFormula(F: TFormula; const Root: TSNode; const Source: string):
     Result := nil;
     case Node.Kind of
       fkPattern:
-        Result := FindMatches(Node.Pattern.Root, Root, Source);
+        Result := FindMatches(Node.Pattern.Root, Root, Source, GoDeeperStmt);
       fkEither:
         begin
           for I := 0 to High(Node.FChildren) do
@@ -445,7 +455,7 @@ function EvaluateFormula(F: TFormula; const Root: TSNode; const Source: string):
           begin
             if Node.FChildren[I].Kind = fkInside then
             begin
-              S := FindMatches(Node.FChildren[I].Pattern.Root, Root, Source);
+              S := FindMatches(Node.FChildren[I].Pattern.Root, Root, Source, GoDeeperStmt);
               Cur := KeepInside(Cur, S, Source);
             end;
           end;
@@ -453,7 +463,7 @@ function EvaluateFormula(F: TFormula; const Root: TSNode; const Source: string):
           begin
             if Node.FChildren[I].Kind = fkNotInside then
             begin
-              S := FindMatches(Node.FChildren[I].Pattern.Root, Root, Source);
+              S := FindMatches(Node.FChildren[I].Pattern.Root, Root, Source, GoDeeperStmt);
               Cur := RemoveInside(Cur, S, Source);
             end;
           end;
@@ -461,7 +471,7 @@ function EvaluateFormula(F: TFormula; const Root: TSNode; const Source: string):
           begin
             if Node.FChildren[I].Kind = fkNot then
             begin
-              S := FindMatches(Node.FChildren[I].Pattern.Root, Root, Source);
+              S := FindMatches(Node.FChildren[I].Pattern.Root, Root, Source, GoDeeperStmt);
               Cur := RemoveEqual(Cur, S, Source);
             end;
           end;

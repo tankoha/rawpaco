@@ -1,0 +1,1 @@
+--fail-on=warning --only=DECL-SEQ-OFF --rules=tests/decl/cli/seq_deeper/rules.json tests/decl/cli/seq_deeper/target.pas

@@ -1,0 +1,3 @@
+$X := TFoo.Create;
+...
+$X.Free;

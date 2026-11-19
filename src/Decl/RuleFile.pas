@@ -323,14 +323,6 @@ begin
     ErrMsg := Path + ': ' + CR.ErrorMessage;
     Exit(False);
   end;
-  if CR.Root.Kind = pkSequence then
-  begin
-    // 照合器（PatMatcher.FindMatches）は文の並びをまだ扱わず空の結果を返す。
-    // 読み込めてしまうと「何も出ない」が安全の意味に読まれるので、ここで止める。
-    CR.Root.Free;
-    ErrMsg := Path + ': a sequence of statements is not supported yet';
-    Exit(False);
-  end;
   if Notices <> nil then
     for W := 0 to High(CR.Warnings) do
       Notices.Add(NoticePrefix + ': warning: ' + CR.Warnings[W]);

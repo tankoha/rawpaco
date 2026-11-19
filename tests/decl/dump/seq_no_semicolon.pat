@@ -1,0 +1,3 @@
+$X := $Y.Create;
+...
+$X.Free;
