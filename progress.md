@@ -87,7 +87,7 @@ M1 着手前に決めたいもの（★）から順に並べる。決まった�
 
 ### M2 合成（目安 1,000〜1,500 行）
 
-- [~] `patterns` / `pattern-either` / `pattern-not` / `pattern-inside` / `pattern-not-inside` と範囲演算・束縛の両立判定 → `src/Decl/Formula.pas`（interface は Opus、implementation は Qwen。レビューで Opus がバグ 2 点を修正）。読み込みは `RuleFile.ParseFormula`（Opus）。決めたことは設計書 4.4 に追記。ゴールデン: 読み込み 12 件、lint 全体 1 件（`tests/decl/cli/combine`、ルール 8 本）。push・CI 待ち
+- [x] `patterns` / `pattern-either` / `pattern-not` / `pattern-inside` / `pattern-not-inside` と範囲演算・束縛の両立判定 → `src/Decl/Formula.pas`（interface は Opus、implementation は Qwen。レビューで Opus がバグ 2 点を修正）。読み込みは `RuleFile.ParseFormula`（Opus）。決めたことは設計書 4.4 に追記。ゴールデン: 読み込み 12 件、lint 全体 1 件（`tests/decl/cli/combine`、ルール 8 本）。Linux / Windows CI 緑（run 44459076403）
 - [ ] 文の並びのパターン（`block` / `statements` / `blockTr`、条件コンパイル指令をまたがない）。`go_deeper_stmt` は既定で有効、入れ子内だけの一致は重要度を一段下げる（#4）。M1 での実測: 文の位置の `...` は後ろに `;` が無いとパースできない（`...;` なら可）。opengrep の他言語のルールは `;` なしで書くことが多いので、PatLexer で補うかルール作者に `...;` を求めるかをここで決める
 - [ ] `svInfo` を `svWarning` の前に追加し、`--fail-on=info` を受け付ける（#6）
 - [ ] `pattern-regex` / `pattern-not-regex` / `metavariable-regex`
@@ -129,7 +129,7 @@ M1 着手前に決めたいもの（★）から順に並べる。決まった�
 
 新しいものを上に追記する。1 エントリ: 日付 / 担当 / やったこと / 結果（テスト・CI）/ 次の一手。
 
-- 2026-11-19 / Opus（ローカル）+ Qwen: M2 の論理結合。合成の木と評価を新ユニット `Formula` に置き、照合器から束縛の同値判定 `BindingsEquivalent` を公開した（単一ノードは構造、`$...X` はテキストの一致）。`patterns` の中は「正の項の積 → pattern-inside → pattern-not-inside → pattern-not」の順に適用し、否定の項が inside から受け継いだ束縛を使えるようにした。正の項どうしの積は、どちら側の一致でも相手の両立する一致の範囲に入るものを残す。いずれも設計書 4.4 の表の素直な読みで、opengrep との食い違いは差分テスト（7.3）で洗う。否定・inside は `patterns` の直下だけで受け付け、`pattern-either` の中では読み込みエラー（opengrep の挙動を差分テストで確かめるまで。ルール5）。Qwen の実装は構造が仕様どおりだったが、直したのは 2 点: (1) 途中経過の変数が外側の関数のもので、`patterns` の中の `pattern-either` の中の `patterns` で外側の途中経過を上書きする、(2) 最初の正の項を `Cur = nil` で判定していたため、最初の項が 1 件も一致しないと 2 番目の項の結果がそのまま残る（誤検知の方向）。どちらも回帰用のルールを `tests/decl/cli/combine/rules2.json` に入れた。結果: make / make test / make selflint 緑。fpc-source 全体で DEFENSE-001 相当の宣言的ルールは 53 件のまま（M1 と同じ。約 1 分 33 秒）。次の一手: push して CI → 文の並びのパターン
+- 2026-11-19 / Opus（ローカル）+ Qwen: M2 の論理結合。合成の木と評価を新ユニット `Formula` に置き、照合器から束縛の同値判定 `BindingsEquivalent` を公開した（単一ノードは構造、`$...X` はテキストの一致）。`patterns` の中は「正の項の積 → pattern-inside → pattern-not-inside → pattern-not」の順に適用し、否定の項が inside から受け継いだ束縛を使えるようにした。正の項どうしの積は、どちら側の一致でも相手の両立する一致の範囲に入るものを残す。いずれも設計書 4.4 の表の素直な読みで、opengrep との食い違いは差分テスト（7.3）で洗う。否定・inside は `patterns` の直下だけで受け付け、`pattern-either` の中では読み込みエラー（opengrep の挙動を差分テストで確かめるまで。ルール5）。Qwen の実装は構造が仕様どおりだったが、直したのは 2 点: (1) 途中経過の変数が外側の関数のもので、`patterns` の中の `pattern-either` の中の `patterns` で外側の途中経過を上書きする、(2) 最初の正の項を `Cur = nil` で判定していたため、最初の項が 1 件も一致しないと 2 番目の項の結果がそのまま残る（誤検知の方向）。どちらも回帰用のルールを `tests/decl/cli/combine/rules2.json` に入れた。結果: make / make test / make selflint 緑。fpc-source 全体で DEFENSE-001 相当の宣言的ルールは 53 件のまま（M1 と同じ。約 1 分 33 秒）。push 後の CI（run 44459076403）も Linux / Windows とも緑。次の一手: 文の並びのパターン
 
 - 2026-11-19 / Opus（ローカル）: オーナー判断により、M1 の比較で見つけたネイティブ DEFENSE-001 の誤検知を修正。`exceptionHandler` の直下に「子が `kRaise` だけの ERROR」があれば、body が `;` でも報告しない（宣言的ルール側の `IsBareRaiseError` と同じ形。ネイティブルールを Decl ユニットに依存させないため、判定は `RuleDefense001.pas` に持たせた）。positive サンプル `reraise_handler.pas` を追加。fpc-source 全体で DEFENSE-001 は 68 → 57 件（想定どおり 11 件減）、他のルールの件数は変化なし。結果: make / make test / make selflint 緑。push 後の CI（run 44455251420）も Linux / Windows とも緑。次の一手: M2
 
