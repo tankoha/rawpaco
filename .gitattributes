@@ -1,0 +1,2 @@
+# --match-rules はバイト位置を出すので、Windows の checkout で CRLF に変わると期待値がずれる。
+tests/decl/cli/match_rules/target.pas eol=lf
